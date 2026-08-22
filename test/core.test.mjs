@@ -633,6 +633,48 @@ check('compound propositional constant',
 check('function in an inequality', ['f(x)=x^2', 'f(3)>8'], isTrue);
 check('defined names in implication', ['k=2', 'x>k\\implies x>1'], isTrue);
 
+console.log('== calculus notation is refused, never disproved ==');
+/**
+ * `\frac{d}{dx}` parses as the ordinary fraction `d / (d·x)`, which used to
+ * leave `d` as a free variable and let the sampling pass disprove the power
+ * rule with a witness naming a variable nobody typed. Being wrong about
+ * whether we can answer is survivable; being confidently wrong about the
+ * answer is not — so the only thing these assert is "not a verdict".
+ */
+const isRefused = (r) => {
+  if (r.kind === 'truth') return `refused notation produced a ${r.value} verdict`;
+  return r.kind === 'error' ? null : `expected a refusal, got ${r.kind}`;
+};
+
+for (const [label, line] of [
+  ['power rule, Leibniz', '\\frac{d}{dx}x^2=2x'],
+  ['bare derivative', '\\frac{d}{dx}x^2'],
+  ['second derivative', '\\frac{d^2}{dx^2}x^3=6x'],
+  ['second derivative, braced', '\\frac{d^{2}}{dx^{2}}x^3=6x'],
+  ['Leibniz quotient', '\\frac{dy}{dx}=2x'],
+  ['upright d', '\\frac{\\mathrm{d}}{\\mathrm{d}x}x^2=2x'],
+  ['partial derivative', '\\frac{\\partial}{\\partial x}(xy)=y'],
+  ['definite integral', '\\int_{0}^{1}x^2dx=\\frac{1}{3}'],
+  ['indefinite integral', '\\int x^2dx=\\frac{x^3}{3}'],
+  ['double integral', '\\iint_{D}x\\,dx\\,dy=1'],
+  ['contour integral', '\\oint_{C}z\\,dz=0'],
+]) check(label, [line], isRefused);
+
+// The guard must not reach past calculus notation into ordinary division, and
+// `d` remains an ordinary name — the demo sheet defines `d(\epsilon)`.
+check('d stays a function name', ['d(\\epsilon):=\\epsilon/2', 'd(4)=2'], isProved);
+check('epsilon-delta witness survives',
+  ['g(x):=2x+1', 'd(\\epsilon):=\\epsilon/2',
+    '\\operatorname{cont}(g,a,\\epsilon,d(\\epsilon))'], isProved);
+check('d stays a constant name', ['d:=4', '\\frac{1}{d}=\\frac{1}{4}'], isProved);
+check('ordinary fraction over d', ['d:=4', '\\frac{d}{2}=2'], isProved);
+
+// Prime notation really does differentiate, which is what the refusal message
+// points at. It must keep working, and must still be able to say "false".
+check('prime notation proves', ['f(x):=x^3', "f'(x)=3x^2"], isProved);
+check('prime notation disproves', ['f(x):=x^3', "f'(x)=2x^2"], isFalse);
+check('second prime notation', ['f(x):=x^3', "f''(x)=6x"], isProved);
+
 console.log('== errors and edge cases ==');
 check('empty line', [''], (r) => r.kind === 'empty' ? null : 'expected empty');
 check('division by zero', ['\\frac{1}{0}'], (r) => (r.kind === 'value' || r.kind === 'error') ? null : 'expected value or error');

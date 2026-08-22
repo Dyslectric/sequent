@@ -20,7 +20,7 @@ npm install
 npm run dev
 ```
 
-`npm test` runs the evaluation-core tests (3,962 cases, no browser needed).
+`npm test` runs the evaluation-core tests (3,980 cases, no browser needed).
 
 `npm run fuzz` runs deterministic property fuzzing over domain-scoped chain
 layout, formatting round trips, incomplete editor input, and exact equality,
@@ -560,6 +560,14 @@ applied to arguments — before parsing, and rewritten back for display.
 ## Known limits
 
 - A `true` from the sampling pass is evidence, not proof (see above).
+- Derivatives are available through prime notation: after `f(x) := x³`, both
+  `f'(x) = 3x²` and `f''(x) = 6x` are proved, and a wrong claim is disproved.
+  Leibniz notation is not — `\frac{d}{dx}` is an ordinary fraction to the
+  parser, `d / (d·x)`, which would leave `d` as a free variable and let the
+  sampling pass "disprove" the power rule with a witness naming a variable
+  nobody typed. `d/dx`, `∂/∂x`, and every integral are therefore refused
+  outright rather than answered. Integrals have no procedure behind them at
+  all yet.
 - Complex identity proofs currently cover the exact rewrite fragment used by
   `Re`, conjugation, `exp`, and exponential cosine. They are not a complete
   complex-analysis or transcendental decision procedure.

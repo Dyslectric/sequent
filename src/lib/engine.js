@@ -290,6 +290,50 @@ function stripDecorations(latex) {
     .trim();
 }
 
+/**
+ * Calculus notation the sheet has no procedure for, and must not guess at.
+ *
+ * Compute Engine reads `\frac{d}{dx}` as the ordinary fraction `d / (d·x)`, so
+ * `\frac{d}{dx}x^2` quietly evaluates to `x`, `d` survives as an ordinary free
+ * variable, and the sampling pass then disproves the power rule with a witness
+ * naming a variable the reader never typed. An integral goes the same way:
+ * `\int_0^1 x^2 dx` normalises to `d·x^3` and is disproved just as confidently.
+ *
+ * Refusing the line is the honest answer. A wrong `undecided` costs a feature;
+ * a wrong `false` carrying a witness costs the reader's trust in every other
+ * verdict on the sheet.
+ */
+const UNSUPPORTED_NOTATION = [
+  // `\b` is the wrong boundary here: `_` is a word character, so `\int\b`
+  // never matches the `\int_{0}^{1}` that every real integral starts with.
+  // "not followed by a letter" is the test that means "end of the command",
+  // and it still keeps `\intercal` from reading as an integral.
+  [/\\(?:iiint|iint|intop|oint|int)(?![a-zA-Z])/, 'integrals are not supported yet'],
+  [/\\partial(?![a-zA-Z])/, 'partial derivatives are not supported yet'],
+  [
+    // `\frac{d}{dx}`, `\frac{d^2}{dx^2}`, `\frac{dy}{dx}`, and the `\mathrm{d}`
+    // spelling of each. Requiring the denominator to open `d` against a letter
+    // is what separates the operator from an ordinary fraction over `d`.
+    new RegExp(
+      '\\\\frac\\s*\\{\\s*(?:\\\\mathrm\\s*\\{\\s*d\\s*\\}|d)'
+      + '(?:\\s*\\^\\s*\\{?\\s*\\d+\\s*\\}?)?\\s*[a-zA-Z]?\\s*\\}'
+      + '\\s*\\{\\s*(?:\\\\mathrm\\s*\\{\\s*d\\s*\\}|d)\\s*[a-zA-Z]'
+    ),
+    // Prime notation is real differentiation — `f(x) := x^3` then `f'(x) = 3x^2`
+    // is proved, and `f'(x) = 2x^2` is disproved — so the reader is one step
+    // from the answer rather than out of luck. Say which step.
+    "d/dx reads as a fraction here — define f, then write f'(x)",
+  ],
+];
+
+/** The first unsupported-notation message this line trips, if any. */
+function unsupportedNotation(latex) {
+  for (const [pattern, message] of UNSUPPORTED_NOTATION) {
+    if (pattern.test(latex)) return message;
+  }
+  return null;
+}
+
 /** First `["Error", ...]` node anywhere in the parsed expression. */
 function findError(json) {
   if (Array.isArray(json)) {
@@ -467,6 +511,9 @@ export class Sheet {
   evaluateLine(rawLatex, options = {}) {
     const trimmed = stripDecorations(rawLatex ?? '');
     if (!trimmed) return { kind: 'empty' };
+
+    const unsupported = unsupportedNotation(trimmed);
+    if (unsupported) return { kind: 'error', message: unsupported };
 
     const { latex, used } = sanitize(trimmed, this.registry);
     const prepared = rewriteReverseImplication(latex);

@@ -124,7 +124,47 @@ check('ℤ/6 is not a field', [...ring(6), '\\mathsf{Fld}(R,p,t,0,1)'], exactFal
 check('the trivial ring is not a field',
   ['R:=\\{0\\}', 'p(a,b):=0', 't(a,b):=0', '\\mathsf{Fld}(R,p,t,0,0)'], exactFalse);
 
+console.log('== modules ==');
+/**
+ * `Mdl(M, p, R, q, t, 1, s)` checks the four action axioms and that the action
+ * lands in M. It does NOT re-check that (M, p) is an abelian group or that
+ * (R, q, t) is a ring — those are separate obligations with their own names,
+ * so a failing module says which axiom failed rather than hiding it.
+ */
+const moduleOver = (ring, mod) => [
+  `M:=\\{${Array.from({ length: mod }, (_, i) => i).join(',')}\\}`,
+  `p(x,y):=\\operatorname{mod}(x+y,${mod})`,
+  `R:=\\{${Array.from({ length: ring }, (_, i) => i).join(',')}\\}`,
+  `q(a,b):=\\operatorname{mod}(a+b,${ring})`,
+  `t(a,b):=\\operatorname{mod}(ab,${ring})`,
+  `s(a,x):=\\operatorname{mod}(ax,${mod})`,
+];
+const MODULE = '\\mathsf{Mdl}(M,p,R,q,t,1,s)';
+
+check('ℤ/4 over ℤ/4', [...moduleOver(4, 4), MODULE], proved);
+check('ℤ/3 over ℤ/3', [...moduleOver(3, 3), MODULE], proved);
+check('ℤ/2 over ℤ/2 is a vector space', [...moduleOver(2, 2), MODULE], proved);
+check('ℤ/2 over ℤ/4', [...moduleOver(4, 2), MODULE], proved);
+check('textual alias',
+  [...moduleOver(4, 4), '\\operatorname{module}(M,p,R,q,t,1,s)'], proved);
+
+check('an action that is not unital',
+  [...moduleOver(4, 4).slice(0, 5), 's(a,x):=\\operatorname{mod}(a+x,4)', MODULE],
+  exactFalse);
+check('the wrong unit element',
+  [...moduleOver(4, 4), '\\mathsf{Mdl}(M,p,R,q,t,2,s)'], exactFalse);
+check('an action that escapes the module',
+  ['M:=\\{0,1\\}', 'p(x,y):=\\operatorname{mod}(x+y,2)', 'R:=\\{0,1,2,3\\}',
+    'q(a,b):=\\operatorname{mod}(a+b,4)', 't(a,b):=\\operatorname{mod}(ab,4)',
+    's(a,x):=\\operatorname{mod}(ax,4)', MODULE], exactFalse);
+
 console.log('== honest unknowns ==');
+check('module on an infinite carrier',
+  ['p(x,y):=x+y', 'R:=\\{0,1\\}', 'q(a,b):=\\operatorname{mod}(a+b,2)',
+    't(a,b):=\\operatorname{mod}(ab,2)', 's(a,x):=ax',
+    '\\mathsf{Mdl}(\\mathbb{Z},p,R,q,t,1,s)'], honestUnknown);
+check('module with a missing action',
+  [...moduleOver(4, 4).slice(0, 5), '\\mathsf{Mdl}(M,p,R,q,t,1,z)'], honestUnknown);
 check('ring on an infinite carrier',
   ['p(a,b):=a+b', 't(a,b):=ab', '\\mathsf{Rng}(\\mathbb{Z},p,t,0)'], honestUnknown);
 check('ring with a missing operation',

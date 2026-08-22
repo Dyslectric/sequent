@@ -100,6 +100,7 @@ const BUILTIN_FUNCTIONS = new Map(Object.entries({
   RingDistributive: 'RingDistributive', distributive: 'RingDistributive',
   RingUnity: 'RingUnity', unity: 'RingUnity',
   FieldStructure: 'FieldStructure', field: 'FieldStructure',
+  ModuleStructure: 'ModuleStructure', module: 'ModuleStructure',
   Induction: 'Induction', induction: 'Induction', induct: 'Induction',
   InductionBase: 'InductionBase', indbase: 'InductionBase',
   InductionStep: 'InductionStep', indstep: 'InductionStep',
@@ -139,6 +140,7 @@ const STYLED_BUILTIN_FUNCTIONS = new Map([
   ['mathsf:Dst:', 'RingDistributive'],
   ['mathsf:Uni:', 'RingUnity'],
   ['mathsf:Fld:', 'FieldStructure'],
+  ['mathsf:Mdl:', 'ModuleStructure'],
   // `Ind` is already the indiscrete topology, so induction spells it out.
   ['mathsf:Induct:', 'Induction'],
   ['mathsf:Base:', 'InductionBase'],

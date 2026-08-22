@@ -20,7 +20,7 @@ npm install
 npm run dev
 ```
 
-`npm test` runs the evaluation-core tests (4,098 cases, no browser needed).
+`npm test` runs the evaluation-core tests (4,108 cases, no browser needed).
 
 `npm run fuzz` runs deterministic property fuzzing over domain-scoped chain
 layout, formatting round trips, incomplete editor input, and exact equality,
@@ -468,9 +468,45 @@ Both distributive laws are checked separately rather than one being inferred
 from the other: a ring whose multiplication does not commute must satisfy both,
 and checking only the left one would certify structures that are not rings.
 
+### Modules
+
+`Mdl(M, p, R, q, t, 1, s)` checks the four module axioms — the action
+distributes over module addition and over ring addition, it is compatible with
+ring multiplication, and the unit acts trivially — together with the fact that
+the action lands in `M` at all:
+
+```
+M := {0, 1}
+p(x, y) := mod(x + y, 2)
+R := {0, 1}
+q(a, b) := mod(a + b, 2)
+t(a, b) := mod(a·b, 2)
+s(a, x) := mod(a·x, 2)
+Mdl(M, p, R, q, t, 1, s)       true, proved — a vector space over 𝔽₂
+```
+
+It deliberately does *not* re-check that `(M, p)` is an abelian group or that
+`(R, q, t)` is a ring. Those are separate obligations with their own names, and
+keeping them separate is the same choice the topology and group axioms make: a
+line that silently re-checked its neighbours would hide which obligation
+actually failed.
+
+Names are single letters here for a reason — `rp` is not an identifier in math
+mode, it is `r · p`. Longer names go in the serif text channel.
+
 The keyboard's `grp` layer carries all of these; `group`, `abelian`, `subgroup`,
 `closure`, `assoc`, `identity`, `inverses`, `ring`, `field`, `distributive`,
-and `unity` are the textual shortcuts.
+`unity`, and `module` are the textual shortcuts.
+
+### What this algebra is not
+
+Every predicate here verifies a *concrete finite instance*. None of them prove
+a theorem of algebra. Lagrange's theorem, Sylow's theorems, the isomorphism
+theorems and the classification of finite abelian groups all quantify over
+arbitrary groups, and no carrier-by-carrier check can establish a statement of
+that shape — the app has no way to take an arbitrary group as a hypothesis.
+What it can do is witness such a theorem on any instance you build, which is a
+smaller and more honest claim, and is what the Lagrange example above is doing.
 
 ### Analysis and topology
 
@@ -741,7 +777,7 @@ Sampling is deterministic, so the same sheet always gives the same verdict.
 | `src/lib/complex-proof.js` | exact real-part, conjugation, exponential, and cosine rewrites |
 | `src/lib/sets.js` | set values, set-builders, extensional lowering, finite set decisions |
 | `src/lib/analysis.js` | certificate dispatch: epsilon-delta, induction, compactness, metric balls, finite and intensional topology proofs |
-| `src/lib/algebra.js` | exact verification of finite groups, rings and fields, axiom by axiom |
+| `src/lib/algebra.js` | exact verification of finite groups, rings, fields and modules, axiom by axiom |
 | `src/lib/polynomial.js` | polynomial sign certificates and exact sign-chart routing |
 | `src/lib/rational-polynomial.js` | exact rational arithmetic, Sturm root isolation, sign charts |
 | `src/lib/quadratic-form.js` | exact positive-semidefiniteness certificates for multivariable quadratics |

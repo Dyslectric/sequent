@@ -25,6 +25,7 @@ export const ALGEBRA_PREDICATES = new Set([
   'GroupStructure', 'GroupClosure', 'GroupAssociative',
   'GroupIdentity', 'GroupInverses', 'AbelianGroup', 'Subgroup',
   'RingStructure', 'RingDistributive', 'RingUnity', 'FieldStructure',
+  'ModuleStructure',
 ]);
 
 /**
@@ -211,6 +212,94 @@ function invertibleAwayFromZero(data, zeroExpr, oneExpr) {
 }
 
 /**
+ * The four module axioms, plus the closure of the action.
+ *
+ * `Mdl(M, p, R, rp, rm, 1, s)` deliberately does not re-check that `(M, p)` is
+ * an abelian group or that `(R, rp, rm)` is a ring. Those are separate
+ * obligations with their own names, and making them separate is the same
+ * choice the topology axioms and the group axioms already make: a structure is
+ * walked one line at a time, and a line that silently re-checked its
+ * neighbours would hide which obligation actually failed.
+ *
+ * What it does check is that the action lands in M — without that the axioms
+ * are comparing values that are not in the module at all.
+ */
+function moduleTruth(ce, expr, definitions) {
+  if (expr.nops !== 7) return null;
+  const [
+    moduleExpr, addExpr, ringExpr, ringAddExpr, ringMultiplyExpr, oneExpr, actionExpr,
+  ] = expr.ops;
+
+  const vectors = structure(ce, moduleExpr, addExpr, definitions);
+  const scalarsAdditive = structure(ce, ringExpr, ringAddExpr, definitions);
+  const scalarsMultiplicative = structure(ce, ringExpr, ringMultiplyExpr, definitions);
+  const action = binaryDefinition(actionExpr, definitions);
+  if (!vectors || !scalarsAdditive || !scalarsMultiplicative || !action) return null;
+
+  const scalars = scalarsAdditive.items;
+  const act = (r, x) => applyBinary(action, r, x);
+  const inModule = (value) => {
+    const key = value === null ? null : valueKey(value);
+    return key !== null && vectors.index.has(key);
+  };
+
+  for (const r of scalars) {
+    for (const x of vectors.items) {
+      const scaled = act(r, x);
+      if (scaled === null) return null;
+      if (!inModule(scaled)) return false;
+    }
+  }
+
+  const one = identityAt(scalarsMultiplicative, oneExpr);
+  if (one === null) return false;
+  const oneValue = scalarsMultiplicative.items[one];
+
+  for (const x of vectors.items) {
+    // 1·x = x
+    const unital = act(oneValue, x);
+    if (unital === null) return null;
+    if (valueKey(unital) !== valueKey(x)) return false;
+
+    for (const r of scalars) {
+      for (const y of vectors.items) {
+        // r·(x + y) = r·x + r·y
+        const sum = applyBinary(vectors.operation, x, y);
+        if (sum === null) return null;
+        const scaledSum = act(r, sum);
+        const first = act(r, x);
+        const second = act(r, y);
+        if (scaledSum === null || first === null || second === null) return null;
+        const expanded = applyBinary(vectors.operation, first, second);
+        if (expanded === null) return null;
+        if (valueKey(scaledSum) !== valueKey(expanded)) return false;
+      }
+
+      for (const s of scalars) {
+        // (r + s)·x = r·x + s·x
+        const scalarSum = applyBinary(scalarsAdditive.operation, r, s);
+        const product = applyBinary(scalarsMultiplicative.operation, r, s);
+        if (scalarSum === null || product === null) return null;
+        const bySum = act(scalarSum, x);
+        const left = act(r, x);
+        const right = act(s, x);
+        if (bySum === null || left === null || right === null) return null;
+        const added = applyBinary(vectors.operation, left, right);
+        if (added === null) return null;
+        if (valueKey(bySum) !== valueKey(added)) return false;
+
+        // (r·s)·x = r·(s·x)
+        const byProduct = act(product, x);
+        const nested = act(r, right);
+        if (byProduct === null || nested === null) return null;
+        if (valueKey(byProduct) !== valueKey(nested)) return false;
+      }
+    }
+  }
+  return true;
+}
+
+/**
  * Truth of one algebra predicate, or null when this prover cannot say.
  *
  * Null covers a carrier that is not finite, an operation that is not a
@@ -240,6 +329,8 @@ export function algebraTruth(ce, expr, definitions) {
     return closed(part) && hasIdentity(part, identityExpr)
       && hasInverses(part, identityExpr);
   }
+
+  if (op === 'ModuleStructure') return moduleTruth(ce, expr, definitions);
 
   // Two operations on one carrier: rings and fields.
   if (op === 'RingDistributive' || op === 'RingStructure' || op === 'FieldStructure') {

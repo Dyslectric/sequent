@@ -25,6 +25,7 @@ export const INLINE_SHORTCUTS = {
   distributive: '\\mathsf{Dst}\\left(#?,#?,#?\\right)',
   unity: '\\mathsf{Uni}\\left(#?,#?,#?\\right)',
   field: '\\mathsf{Fld}\\left(#?,#?,#?,#?,#?\\right)',
+  module: '\\mathsf{Mdl}\\left(#?,#?,#?,#?,#?,#?,#?\\right)',
   assoc: '\\mathsf{Asc}\\left(#?,#?\\right)',
   identity: '\\mathsf{Idn}\\left(#?,#?,#?\\right)',
   inverses: '\\mathsf{Inv}\\left(#?,#?,#?\\right)',
@@ -356,6 +357,11 @@ export const ALGEBRA_LAYOUT = {
       }),
       key('\\mathsf{Uni}', {
         insert: '\\mathsf{Uni}(#?,#?,#?)', class: 'small', tooltip: 'multiplicative identity',
+      }),
+      key('\\mathsf{Mdl}', {
+        insert: '\\mathsf{Mdl}(#?,#?,#?,#?,#?,#?,#?)',
+        class: 'small',
+        tooltip: 'is a module over a ring',
       }),
     ],
     [

@@ -30,6 +30,7 @@ import {
   reinterpretCartesianProducts,
   SET_RELATIONS,
   setBuilderParts,
+  standardNumericDomain,
 } from './sets.js';
 
 const ID_RE = /^Id\d+$/;
@@ -379,6 +380,43 @@ function collectBoundSymbols(expr, out = new Set()) {
   }
   expr.ops?.forEach((operand) => collectBoundSymbols(operand, out));
   return out;
+}
+
+/**
+ * Per-variable numeric domains, read off the statement's own quantifiers.
+ *
+ * `∀n ∈ ℕ, P(n)` is lowered by dropping the quantifier — free variables are
+ * already read universally — so the domain would otherwise be lost between the
+ * parser and the sampler. Collecting it here from the original expression is
+ * what keeps `n` out of the fractions.
+ */
+function collectDomainRestrictions(expr, out = new Map()) {
+  if (!expr) return out;
+  if (QUANTIFIERS.has(expr.operator) && expr.nops >= 1) {
+    const binding = expr.ops[0];
+    if (binding?.operator === 'Element' && binding.nops === 2 && binding.ops[0]?.symbol) {
+      const domain = standardNumericDomain(binding.ops[1]);
+      if (domain) out.set(binding.ops[0].symbol, domain);
+    }
+  }
+  expr.ops?.forEach((operand) => collectDomainRestrictions(operand, out));
+  return out;
+}
+
+/**
+ * A summation or product whose bound is still symbolic. Sampling one is
+ * meaningless — `\sum_{k=1}^{n}` says nothing at n = -6 or n = ½ — and the
+ * sampler used to report the resulting nonsense as a counterexample, so
+ * `\sum_{k=1}^{n+1}k - \sum_{k=1}^{n}k = n+1` came back false at n = -6.
+ * The closed forms Compute Engine knows are found before sampling and are
+ * unaffected; what changes is that the rest now says so instead of guessing.
+ */
+function hasOpenSummation(expr) {
+  try {
+    return /"(?:Sum|Product)"/.test(JSON.stringify(expr.json)) && expr.unknowns.length > 0;
+  } catch {
+    return false;
+  }
 }
 
 /** Engine output uses `\imaginaryI` / `\exponentialE`; users expect `i` and `e`. */
@@ -793,6 +831,8 @@ export class Sheet {
   evaluateStatement(expr, used) {
     const complex = JSON.stringify(expr.json).includes('Complex');
     const boundSymbols = collectBoundSymbols(expr);
+    const domains = collectDomainRestrictions(expr);
+    const openSummation = hasOpenSummation(expr);
     let decidedExpr = expr;
     let verdict;
     let analysis = null;
@@ -825,7 +865,8 @@ export class Sheet {
       verdict = decideStatement(this.ce, decidedExpr, {
         complex,
         // An unresolved set variable must never receive a numeric test value.
-        allowSampling: !analysis && !lowered.unresolvedSets,
+        allowSampling: !analysis && !lowered.unresolvedSets && !openSummation,
+        domains,
         // Nor may an opaque set/domain atom be accepted from Compute Engine's
         // eager evaluation; the symbolic tautology prover still runs below it.
         allowDirectEvaluation: !analysis?.unsafeEvaluation
@@ -836,9 +877,10 @@ export class Sheet {
     } else {
       verdict = decideStatement(this.ce, decidedExpr, {
         complex,
-        allowSampling: !analysis,
+        allowSampling: !analysis && !openSummation,
         allowDirectEvaluation: !analysis?.unsafeEvaluation && !analysis?.unresolvedAnalysis,
         realSymbols: analysis?.realSymbols,
+        domains,
       });
     }
 

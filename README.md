@@ -20,7 +20,7 @@ npm install
 npm run dev
 ```
 
-`npm test` runs the evaluation-core tests (3,980 cases, no browser needed).
+`npm test` runs the evaluation-core tests (3,992 cases, no browser needed).
 
 `npm run fuzz` runs deterministic property fuzzing over domain-scoped chain
 layout, formatting round trips, incomplete editor input, and exact equality,
@@ -290,6 +290,38 @@ finite sets are evaluated exactly; restricted universal propositions such as
 `∀x ∈ S, P(x)` are lowered to implication. Set-builder membership, subset, and
 equality become arithmetic propositions, so they inherit the polynomial proof
 procedures below.
+
+### Quantifying over ℕ and ℤ
+
+A universal over one of the infinite standard number sets narrows the domain of
+a variable rather than enumerating anything:
+
+```
+∀n ∈ ℕ, n² ≥ n                          true
+∀n ∈ ℝ, n² ≥ n                          false, counterexample n = 2/3
+∀n ∈ ℕ, n² > n                          false, counterexample n = 0
+∀n ∈ ℕ, 2ⁿ ≥ n+1 ⟹ 2ⁿ⁺¹ ≥ n+2          true
+```
+
+The distinction is the whole point. A statement true over ℕ is routinely false
+over ℝ — every inductive step is — and a witness drawn from the wrong domain
+disproves nothing. Sample values for a variable declared over ℕ or ℤ are drawn
+from that domain, so its counterexamples are natural numbers rather than
+fractions.
+
+Domain evidence also constrains what the exact procedures are allowed to
+conclude. The polynomial sign chart decides over ℝ; a `true` from it carries
+down to ℕ, but a `false` does not, since the point where the statement fails
+may not be in the domain at all. Where a variable is narrowed, the sign chart
+may prove but not disprove.
+
+A summation or product whose bound is still symbolic is never sampled: `∑_{k=1}^{n}`
+means nothing at `n = -6`. Closed forms Compute Engine already knows are found
+before sampling and are unaffected; what changed is that the rest now say
+`undecided` instead of reporting the nonsense as a counterexample.
+
+Existential quantification over an infinite domain remains undecided — the app
+has no way to produce a witness it cannot search for.
 
 Power sets of finite bases with at most eight elements expand as exact values;
 larger ones remain compact to avoid exponential rendering. Proposition proofs

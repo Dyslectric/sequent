@@ -26,6 +26,13 @@ const CHAIN_RELATIONS = new Set([
   'Equal', 'IdenticallyEqual', 'Less', 'LessEqual', 'Greater', 'GreaterEqual',
 ]);
 
+/**
+ * Domains strictly inside ℝ. A real-valued decision procedure may still prove
+ * a statement about these — ℕ ⊂ ℝ — but may not disprove one, because the
+ * point where it fails can lie outside the domain the reader declared.
+ */
+const NARROWED_DOMAINS = new Set(['natural', 'positive-integer', 'integer', 'rational']);
+
 const BOOLEAN_CONNECTIVES = new Set(['And', 'Or', 'Not', 'Implies', 'Equivalent']);
 const MAX_BOOLEAN_ATOMS = 12;
 
@@ -113,7 +120,7 @@ function collectLiterals(json, out = new Set()) {
  * adjacent to the literals appearing in the statement — which is where
  * inequality boundaries live.
  */
-function buildSamplePool(ce, expr, complex) {
+function buildSamplePool(ce, expr, complex, domain = null) {
   const values = [];
   const seen = new Set();
   const push = (latex) => {
@@ -122,10 +129,31 @@ function buildSamplePool(ce, expr, complex) {
     values.push({ latex, expr: ce.parse(latex) });
   };
 
+  // A variable declared over ℕ or ℤ must never be handed a fraction or a
+  // surd. Every inductive step is false at n = ½ and true over the naturals,
+  // so sampling the reals here does not merely fail to prove such a statement
+  // — it disproves it, with a witness outside the domain the reader declared.
+  const lowestInteger = { natural: 0, 'positive-integer': 1, integer: -6 }[domain];
+  if (lowestInteger !== undefined) {
+    for (let n = lowestInteger; n <= 12; n++) push(String(n));
+    for (const b of ['100', '1000']) push(b);
+    if (domain === 'integer') for (const b of ['-100', '-1000']) push(b);
+    for (const lit of collectLiterals(expr.json)) {
+      if (!Number.isFinite(lit) || Math.abs(lit) > 1e6) continue;
+      for (const delta of [0, 1, -1]) {
+        const v = lit + delta;
+        if (Number.isInteger(v) && v >= lowestInteger) push(String(v));
+      }
+    }
+    return values;
+  }
+
   for (let n = -6; n <= 6; n++) push(String(n));
   for (const q of ['\\frac{1}{2}', '-\\frac{1}{2}', '\\frac{1}{3}', '-\\frac{2}{3}',
     '\\frac{3}{2}', '-\\frac{5}{2}', '\\frac{22}{7}', '\\frac{1}{10}', '-\\frac{1}{100}']) push(q);
-  for (const r of ['\\sqrt{2}', '-\\sqrt{2}', '\\pi', '-\\pi', 'e', '\\frac{\\pi}{4}']) push(r);
+  if (domain !== 'rational') {
+    for (const r of ['\\sqrt{2}', '-\\sqrt{2}', '\\pi', '-\\pi', 'e', '\\frac{\\pi}{4}']) push(r);
+  }
   for (const b of ['100', '-100', '1000', '\\frac{1}{1000}']) push(b);
 
   // Boundary probing: inequalities flip exactly at the constants in the statement.
@@ -824,6 +852,7 @@ export function decideStatement(ce, expr, options = {}) {
   const allowSampling = options.allowSampling !== false;
   const allowDirectEvaluation = options.allowDirectEvaluation !== false;
   const realSymbols = new Set(options.realSymbols ?? []);
+  const domains = options.domains instanceof Map ? options.domains : new Map();
 
   // 1a. Outright proof by the CAS.
   let evaluated;
@@ -848,7 +877,13 @@ export function decideStatement(ce, expr, options = {}) {
   if (exact?.value === true) {
     return { value: true, method: 'proved', samples: 0, counterexample: null };
   }
-  if (exact?.value === false) {
+  // The sign chart decides over ℝ. True there carries to any subdomain, but
+  // false does not: the point where `n^2 >= n` fails is 2/3, which is no
+  // counterexample at all to a claim made about ℕ. Where a variable has been
+  // narrowed, leave the false verdict to the sampler, whose pool is drawn from
+  // the declared domain and whose witnesses therefore lie inside it.
+  const narrowed = expr.unknowns.some((id) => NARROWED_DOMAINS.has(domains.get(id)));
+  if (exact?.value === false && !narrowed) {
     return {
       value: false,
       method: exact.counterexample ? 'counterexample' : 'disproved',
@@ -882,7 +917,12 @@ export function decideStatement(ce, expr, options = {}) {
   // Domain evidence is per variable. The presence of `i` elsewhere in a
   // statement may make unconstrained variables complex, but a variable bound
   // by `x in R` must never receive one of those complex candidates.
-  const pools = unknowns.map((id) => buildSamplePool(ce, expr, complex && !realSymbols.has(id)));
+  const pools = unknowns.map((id) => {
+    const domain = domains.get(id) ?? null;
+    const allowComplex = complex && !realSymbols.has(id)
+      && (domain === null || domain === 'complex');
+    return buildSamplePool(ce, expr, allowComplex, domain);
+  });
   const random = makeRandom(hashString(expr.toString() + unknowns.join(',')));
   const started = Date.now();
   let decisive = 0;

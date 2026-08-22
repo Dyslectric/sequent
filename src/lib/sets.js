@@ -38,6 +38,26 @@ const NUMBER_SET_RANK = new Map([
   ['ComplexNumbers', 4],
 ]);
 
+/**
+ * The sampling domain each standard numeric set stands for. A universal over
+ * one of these is not a pointwise implication over an opaque membership atom —
+ * it is the app's ordinary universal reading of a free variable, narrowed to a
+ * domain. Enumerating the set is hopeless; restricting the candidates is not.
+ */
+const NUMERIC_DOMAINS = new Map([
+  ['NonNegativeIntegers', 'natural'],
+  ['PositiveIntegers', 'positive-integer'],
+  ['Integers', 'integer'],
+  ['RationalNumbers', 'rational'],
+  ['RealNumbers', 'real'],
+  ['ComplexNumbers', 'complex'],
+]);
+
+/** The sampling domain a standard numeric set denotes, or null if it is not one. */
+export function standardNumericDomain(expr) {
+  return NUMERIC_DOMAINS.get(expr?.symbol) ?? null;
+}
+
 const LOGICAL = new Set(['And', 'Or', 'Not', 'Implies', 'Equivalent']);
 const MAX_POWER_SET_BASE_SIZE = 8;
 const MAX_CARTESIAN_PRODUCT_SIZE = 256;
@@ -701,6 +721,21 @@ function lowerNode(ce, expr, definitions, seen = new Set(), makeWitness, realSym
       ce, op, binding, body, definitions, seen, makeWitness, realSymbols
     );
     if (finite) return finite;
+    // A standard numeric domain never materialises, so the generic path below
+    // would build an implication over an opaque `n ∈ ℕ` atom and leave the
+    // whole statement unresolved — which is why every ℕ- and ℤ-quantified line
+    // used to come back undecided, true and false alike. Strip the quantifier
+    // instead: free variables are already read universally, and the domain
+    // itself travels separately, to the sampler.
+    if (binding?.operator === 'Element' && binding.nops === 2 && binding.ops[0]?.symbol) {
+      const numeric = standardNumericDomain(
+        resolveDefinedSet(binding.ops[1], definitions, new Set())
+      );
+      if (numeric) {
+        if (numeric !== 'complex') realSymbols.add(binding.ops[0].symbol);
+        return lowerNode(ce, body, definitions, seen, makeWitness, realSymbols);
+      }
+    }
     if (binding?.operator === 'Element' && binding.nops === 2 && binding.ops[0]?.symbol) {
       const domain = membership(
         ce, binding.ops[0], binding.ops[1], definitions, seen, realSymbols, makeWitness

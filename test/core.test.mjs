@@ -633,6 +633,58 @@ check('compound propositional constant',
 check('function in an inequality', ['f(x)=x^2', 'f(3)>8'], isTrue);
 check('defined names in implication', ['k=2', 'x>k\\implies x>1'], isTrue);
 
+console.log('== domain-restricted quantification ==');
+/**
+ * `∀n ∈ ℕ` used to be inert: every ℕ- and ℤ-restricted line came back
+ * undecided, true and false alike, because the quantifier lowering waited for
+ * a finite set to materialise and ℕ never does. The domain now travels to the
+ * sampler instead, which matters most for the statements that are true over ℕ
+ * and false over ℝ — every inductive step is one of those.
+ */
+const isNotFalse = (r) => (
+  r.kind === 'truth' && r.value === false
+    ? `disproved a statement that holds on its declared domain` : null
+);
+/** A witness for a claim about ℕ has to be a natural number to mean anything. */
+const isFalseWithIntegerWitness = (r) => {
+  if (r.kind !== 'truth' || r.value !== false) return 'expected false';
+  if (r.method !== 'counterexample') return `expected a witness, got ${r.method}`;
+  const bad = r.counterexample.filter((c) => !/^-?\d+$/.test(c.valueLatex));
+  return bad.length
+    ? `witness outside ℕ: ${bad.map((c) => `${c.nameLatex}=${c.valueLatex}`).join(', ')}`
+    : null;
+};
+
+check('N: n^2 >= n holds', ['\\forall n\\in\\mathbb{N},n^2\\ge n'], isTrue);
+check('Z: n^2 >= n holds', ['\\forall n\\in\\mathbb{Z},n^2\\ge n'], isTrue);
+check('N: 2^n >= n+1 step', ['\\forall n\\in\\mathbb{N},2^n\\ge n+1\\implies2^{n+1}\\ge n+2'],
+  isTrue);
+check('N: Bernoulli step',
+  ['\\forall n\\in\\mathbb{N},x\\ge-1\\land(1+x)^n\\ge1+nx'
+    + '\\implies(1+x)^{n+1}\\ge1+(n+1)x'], isTrue);
+check('N: divisibility step', ['\\forall n\\in\\mathbb{N},\\operatorname{mod}(n^3-n,3)=0'],
+  isTrue);
+check('N: summation telescopes',
+  ['\\forall n\\in\\mathbb{N},\\sum_{k=1}^{n+1}k-\\sum_{k=1}^{n}k=n+1'], isTrue);
+
+// A narrowed domain must not become a licence to call anything true: a false
+// claim stays false, and its witness has to lie inside the declared domain.
+check('N: false claim stays false', ['\\forall n\\in\\mathbb{N},n^2>n'],
+  isFalseWithIntegerWitness);
+check('N: absurd claim stays false', ['\\forall n\\in\\mathbb{N},2^n<n'],
+  isFalseWithIntegerWitness);
+
+// ℝ is untouched: the sign chart still disproves at the fractional point.
+check('R: n^2 >= n still false', ['\\forall n\\in\\mathbb{R},n^2\\ge n'], isFalse);
+check('R: x^2 >= 0 still proved', ['\\forall x\\in\\mathbb{R},x^2\\ge0'], isProved);
+
+// A summation with a symbolic bound says nothing at n = -6, so the sampler is
+// no longer allowed to report what it finds there as a counterexample.
+check('open summation is not disproved',
+  ['\\sum_{k=1}^{n+1}k-\\sum_{k=1}^{n}k=n+1'], isNotFalse);
+check('closed-form summation still proved',
+  ['\\sum_{k=1}^{n}k=\\frac{n(n+1)}{2}'], isProved);
+
 console.log('== calculus notation is refused, never disproved ==');
 /**
  * `\frac{d}{dx}` parses as the ordinary fraction `d / (d·x)`, which used to

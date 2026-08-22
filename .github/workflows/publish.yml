@@ -55,7 +55,11 @@ jobs:
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
             type=sha,format=short
+            # `latest` is stated for both cases rather than left to the action's
+            # `latest=auto` default, whose exact trigger is easy to misread.
+            # Duplicates collapse, so naming both is harmless.
             type=raw,value=latest,enable={{is_default_branch}}
+            type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/v') }}
 
       - uses: docker/build-push-action@v6
         with:

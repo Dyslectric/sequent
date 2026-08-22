@@ -160,6 +160,11 @@ export function describeSetDefinition(expr, definitions = new Map()) {
 export function containsSetConstruct(expr, definitions = new Map()) {
   if (!expr) return false;
   if (SET_RELATIONS.has(expr.operator) || SET_OPERATORS.has(expr.operator)) return true;
+  // `card(S)` is a set construct even when S is not yet a known set. Without
+  // this the statement misses the set path entirely and reaches the sampler,
+  // which treats `card(S)` as an ordinary unknown and disproves claims about
+  // it with values no cardinality could take.
+  if (expr.operator === 'SetCardinality') return true;
   if (expr.symbol && (STANDARD_SETS.has(expr.symbol) || definitions.get(expr.symbol)?.kind === 'set')) {
     return true;
   }
@@ -820,6 +825,42 @@ function inferSetSymbols(expr, definitions, out = new Set()) {
  * `unresolvedSets` tells the caller not to assign numeric samples to set-valued
  * unknowns that remain after lowering.
  */
+/**
+ * Replace every `card(A)` by the size of A before anything else looks at the
+ * statement.
+ *
+ * Cardinality is the one construct here that takes a set and returns a number,
+ * so it does not belong in the relation lowering: `card(A) = 3` is an ordinary
+ * arithmetic equation, and the set lowering never recurses into one. Left in
+ * place it also reaches the sampler, which treats `card(S)` as an ordinary free
+ * variable and will happily disprove a statement with a value cardinality
+ * could never take.
+ *
+ * Only finite sets have a count here. `card(ℝ)` stays put and marks the
+ * statement unresolved, because this app has no cardinal arithmetic and
+ * guessing is worse than saying so.
+ */
+function resolveCardinalities(ce, expr, definitions, state) {
+  if (!expr) return expr;
+  if (expr.operator === 'SetCardinality' && expr.nops === 1) {
+    const inner = resolveCardinalities(ce, expr.ops[0], definitions, state);
+    const finite = materializeFiniteSet(ce, inner, definitions);
+    if (!finite) {
+      state.unresolved = true;
+      return expr;
+    }
+    return ce.number(finite.symbol === 'EmptySet' ? 0 : finite.nops);
+  }
+  if (!expr.ops?.length) return expr;
+  const parts = expr.ops.map((operand) => resolveCardinalities(ce, operand, definitions, state));
+  if (parts.every((part, index) => part === expr.ops[index])) return expr;
+  try {
+    return ce.box([expr.operator, ...parts]);
+  } catch {
+    return expr;
+  }
+}
+
 export function lowerSetProposition(ce, expr, definitions, makeWitness) {
   const typedDefinitions = new Map(definitions);
   for (const symbol of inferSetSymbols(expr, definitions)) {
@@ -833,8 +874,15 @@ export function lowerSetProposition(ce, expr, definitions, makeWitness) {
     return witness;
   };
   const realSymbols = new Set();
+  const cardinality = { unresolved: false };
+  const counted = resolveCardinalities(ce, expr, typedDefinitions, cardinality);
   const lowered = lowerNode(
-    ce, expr, typedDefinitions, new Set(), sharedWitness, realSymbols
+    ce, counted, typedDefinitions, new Set(), sharedWitness, realSymbols
   );
-  return { ...lowered, realSymbols };
+  return {
+    ...lowered,
+    realSymbols,
+    unresolvedSets: lowered.unresolvedSets || cardinality.unresolved,
+    unsafeEvaluation: lowered.unsafeEvaluation || cardinality.unresolved,
+  };
 }

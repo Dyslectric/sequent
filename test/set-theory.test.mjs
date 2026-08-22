@@ -70,6 +70,48 @@ check('undefined set expression stays set-valued', ['A\\cup B'], (result) => (
     ? null : 'expected a set expression with A and B undefined'
 ));
 
+console.log('== cardinality ==');
+/**
+ * `card(A)` counts a finite set exactly and refuses everything else. The
+ * refusal matters as much as the count: left to the sampler, `card` is just an
+ * unknown that can be handed a number, and claims about it get "disproved" with
+ * values no cardinality could take.
+ */
+check('finite count', ['\\operatorname{card}(\\{1,2,3\\})=3'], proved);
+check('wrong count is false', ['\\operatorname{card}(\\{1,2,3\\})=4'], exactFalse);
+check('empty set counts zero', ['\\operatorname{card}(\\varnothing)=0'], proved);
+check('duplicates collapse first', ['\\operatorname{card}(\\{1,1,2\\})=2'], proved);
+check('named set', ['A:=\\{1,2,3\\}', '\\operatorname{card}(A)=3'], proved);
+check('union', ['\\operatorname{card}(\\{1,2\\}\\cup\\{2,3\\})=3'], proved);
+check('intersection', ['\\operatorname{card}(\\{1,2\\}\\cap\\{2,3\\})=1'], proved);
+check('cartesian product', ['\\operatorname{card}(\\{1,2\\}\\times\\{3,4\\})=4'], proved);
+check('power set', ['A:=\\{1,2\\}', '\\operatorname{card}(\\mathcal{P}(A))=4'], proved);
+check('power set is exponential',
+  ['A:=\\{1,2,3\\}',
+    '\\operatorname{card}(\\mathcal{P}(A))=2^{\\operatorname{card}(A)}'], proved);
+
+// Cantor's theorem, on the finite sets where it is a count rather than a
+// diagonal argument.
+check('Cantor at 0',
+  ['\\operatorname{card}(\\varnothing)'
+    + '<\\operatorname{card}(\\mathcal{P}(\\varnothing))'], proved);
+check('Cantor at 2',
+  ['A:=\\{1,2\\}',
+    '\\operatorname{card}(A)<\\operatorname{card}(\\mathcal{P}(A))'], proved);
+check('Cantor at 3',
+  ['A:=\\{1,2,3\\}',
+    '\\operatorname{card}(A)<\\operatorname{card}(\\mathcal{P}(A))'], proved);
+
+// No cardinal arithmetic: an infinite or undefined set has no count here, and
+// saying so is the whole point.
+check('infinite set has no count', ['\\operatorname{card}(\\mathbb{R})=1'], unknown);
+check('undefined name has no count', ['\\operatorname{card}(S)=1'], unknown);
+check('infinite comparison undecided',
+  ['\\operatorname{card}(\\mathbb{N})<\\operatorname{card}(\\mathbb{R})'], unknown);
+
+// `|x|` is still absolute value and must not be read as a count.
+check('absolute value untouched', ['\\left|-3\\right|=3'], proved);
+
 console.log('== power sets ==');
 check('finite power set displays every subset', ['\\mathcal{P}(\\{1,2\\})'], (result) => (
   result.kind === 'set'

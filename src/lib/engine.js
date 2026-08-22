@@ -133,7 +133,7 @@ function latexCanDenoteSet(latex, definitions) {
 
 function wrappedPowerSetCall(latex) {
   const source = latex.trim();
-  const head = /^\\operatorname\{PowerSet\}\s*/.exec(source)?.[0];
+  const head = /^\\operatorname\{(?:PowerSet|SetCardinality)\}\s*/.exec(source)?.[0];
   if (!head) return null;
   const rest = source.slice(head.length);
   const sized = rest.startsWith('\\left(');
@@ -414,6 +414,24 @@ function collectDomainRestrictions(expr, out = new Map()) {
 function hasOpenSummation(expr) {
   try {
     return /"(?:Sum|Product)"/.test(JSON.stringify(expr.json)) && expr.unknowns.length > 0;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * A cardinality anywhere in the statement.
+ *
+ * Where the set is finite the count is substituted before anything numeric
+ * runs, so those lines are decided exactly and never reach the sampler anyway.
+ * Where it is not — `card(ℝ)`, or a name that was never defined as a set — the
+ * head survives, and sampling it would mean handing `card` a number and
+ * reporting whatever came back as a counterexample. Refusing to sample is the
+ * only honest option: this app has no cardinal arithmetic.
+ */
+function hasCardinality(expr) {
+  try {
+    return /"SetCardinality"/.test(JSON.stringify(expr.json));
   } catch {
     return false;
   }
@@ -832,7 +850,7 @@ export class Sheet {
     const complex = JSON.stringify(expr.json).includes('Complex');
     const boundSymbols = collectBoundSymbols(expr);
     const domains = collectDomainRestrictions(expr);
-    const openSummation = hasOpenSummation(expr);
+    const openSummation = hasOpenSummation(expr) || hasCardinality(expr);
     let decidedExpr = expr;
     let verdict;
     let analysis = null;

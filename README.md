@@ -20,7 +20,7 @@ npm install
 npm run dev
 ```
 
-`npm test` runs the evaluation-core tests (4,026 cases, no browser needed).
+`npm test` runs the evaluation-core tests (4,043 cases, no browser needed).
 
 `npm run fuzz` runs deterministic property fuzzing over domain-scoped chain
 layout, formatting round trips, incomplete editor input, and exact equality,
@@ -290,6 +290,28 @@ finite sets are evaluated exactly; restricted universal propositions such as
 `∀x ∈ S, P(x)` are lowered to implication. Set-builder membership, subset, and
 equality become arithmetic propositions, so they inherit the polynomial proof
 procedures below.
+
+### Cardinality
+
+`card(A)` counts a finite set exactly:
+
+```
+card({1, 2, 3})                        3
+card({1, 1, 2})                        2      duplicates collapse first
+card(𝒫({1, 2}))                        4
+card({1,2} × {3,4})                    4
+card(𝒫(A)) = 2^card(A)                 true, proved
+card(A) < card(𝒫(A))                   true, proved — Cantor, by counting
+```
+
+Only finite sets have a count. `card(ℝ)`, `card(ℕ) < card(ℝ)`, and a `card` of a
+name that was never defined as a set are all `undecided`: this app has no
+cardinal arithmetic, and Cantor's theorem for arbitrary `A` needs a diagonal
+argument rather than a count. Nothing involving a cardinality is ever sampled,
+because a sampler treats `card` as an ordinary unknown and will disprove claims
+about it using values no cardinality could take.
+
+`|x|` remains absolute value throughout — cardinality is spelled `card`.
 
 ### Quantifying over ℕ and ℤ
 

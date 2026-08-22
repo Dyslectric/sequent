@@ -87,6 +87,7 @@ const BUILTIN_FUNCTIONS = new Map(Object.entries({
   TopologyUnionAxiom: 'TopologyUnionAxiom', axunions: 'TopologyUnionAxiom',
   TopologyIntersectionAxiom: 'TopologyIntersectionAxiom', axintersections: 'TopologyIntersectionAxiom',
   MetricIntersectionWitness: 'MetricIntersectionWitness', meetw: 'MetricIntersectionWitness',
+  SetCardinality: 'SetCardinality', cardinality: 'SetCardinality', card: 'SetCardinality',
   Induction: 'Induction', induction: 'Induction', induct: 'Induction',
   InductionBase: 'InductionBase', indbase: 'InductionBase',
   InductionStep: 'InductionStep', indstep: 'InductionStep',

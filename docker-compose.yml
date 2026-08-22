@@ -1,0 +1,49 @@
+# Attaches the published image to an existing Traefik instance.
+#
+# It assumes Traefik is already running elsewhere on this host with a Docker
+# provider and a certificate resolver — this file adds a routed service, it does
+# not stand up a reverse proxy. Copy .env.example to .env and fill it in first.
+#
+#   docker compose pull && docker compose up -d
+
+services:
+  sequent:
+    image: ghcr.io/${GHCR_OWNER}/sequent:${SEQUENT_TAG:-latest}
+    container_name: sequent
+    restart: unless-stopped
+
+    # No ports are published: Traefik reaches the container over the shared
+    # network, so port 80 never needs to be exposed on the host.
+    networks:
+      - traefik
+
+    read_only: true
+    tmpfs:
+      # nginx writes its pid and scratch files; everything else is static.
+      - /var/cache/nginx
+      - /var/run
+    security_opt:
+      - no-new-privileges:true
+
+    labels:
+      traefik.enable: 'true'
+      # Explicit, because a container on more than one network is otherwise
+      # ambiguous to Traefik.
+      traefik.docker.network: ${TRAEFIK_NETWORK:-traefik}
+
+      traefik.http.routers.sequent.rule: Host(`${SEQUENT_DOMAIN}`)
+      traefik.http.routers.sequent.entrypoints: ${TRAEFIK_ENTRYPOINT:-websecure}
+      traefik.http.routers.sequent.tls: 'true'
+      traefik.http.routers.sequent.tls.certresolver: ${TRAEFIK_CERTRESOLVER:-letsencrypt}
+      traefik.http.services.sequent.loadbalancer.server.port: '80'
+
+      # HSTS. The app is installable as a PWA, and an installed PWA that ever
+      # resolves over plain HTTP loses its service worker.
+      traefik.http.routers.sequent.middlewares: sequent-hsts@docker
+      traefik.http.middlewares.sequent-hsts.headers.stsSeconds: '31536000'
+      traefik.http.middlewares.sequent-hsts.headers.stsIncludeSubdomains: 'false'
+
+networks:
+  traefik:
+    external: true
+    name: ${TRAEFIK_NETWORK:-traefik}

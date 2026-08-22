@@ -1,0 +1,13 @@
+node_modules
+dist
+.vite
+
+# Rust build output for the desktop shell.
+src-tauri/target
+src-tauri/gen/schemas
+
+# Local HTTPS material — certs/ca.key is a private key.
+certs
+
+# Deployment settings are per-host.
+.env

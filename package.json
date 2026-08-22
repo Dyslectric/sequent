@@ -1,0 +1,29 @@
+{
+  "name": "sequent",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "test": "node test/core.test.mjs",
+    "tauri": "tauri",
+    "desktop": "tauri dev",
+    "desktop:build": "tauri build",
+    "desktop:build:linux": "tauri build && node scripts/pack-linux.mjs",
+    "cert": "node scripts/make-cert.mjs",
+    "serve": "vite build && vite preview"
+  },
+  "dependencies": {
+    "@cortex-js/compute-engine": "^0.117.0",
+    "@tauri-apps/api": "^2.11.1",
+    "@tauri-apps/plugin-dialog": "^2.7.2",
+    "mathlive": "^0.110.0"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2.11.4",
+    "vite": "^8.2.2",
+    "vite-plugin-pwa": "^1.3.0"
+  }
+}

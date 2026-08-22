@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+    <meta name="color-scheme" content="light dark" />
+    <!-- Kept in step with the in-app theme by applyTheme(), so the phone's
+         status bar matches the sheet rather than the manifest's fixed value. -->
+    <meta name="theme-color" content="#ffffff" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <link rel="apple-touch-icon" href="./icons/apple-touch-icon.png" />
+    <title>Sequent</title>
+  </head>
+  <body>
+    <header class="app-header">
+      <div class="app-header-inner">
+        <h1 class="app-title">Sequent</h1>
+        <div class="app-actions">
+          <div class="segmented" role="group" aria-label="Result format">
+            <button type="button" data-display="exact" class="is-active">Exact</button>
+            <button type="button" data-display="decimal">Decimal</button>
+          </div>
+          <a id="page-link" class="icon-button page-link" href="#demo">Demo</a>
+          <button type="button" id="export-sheet" class="icon-button" title="Save this sheet to a file">Export</button>
+          <button type="button" id="import-sheet" class="icon-button" title="Replace this sheet from a file">Import</button>
+          <input type="file" id="import-file" accept="application/json,.json" hidden />
+          <button type="button" id="clear-sheet" class="icon-button" title="Clear the sheet">Clear</button>
+          <button type="button" id="theme-toggle" class="icon-button" title="Switch theme" aria-label="Switch theme">
+            <span class="theme-icon"></span>
+          </button>
+        </div>
+      </div>
+    </header>
+
+    <div id="app-status" class="app-status" role="status" aria-live="polite" hidden></div>
+
+    <main class="sheet-scroll">
+      <div id="sheet" class="sheet"></div>
+      <p class="hint">
+        <kbd>Enter</kbd> new line &middot;
+        <kbd>Alt</kbd>+<kbd>T</kbd> serif text (also the <b>abc</b> key or <code>\text{</code>; exit with <kbd>}</kbd>)
+        &middot; <code>_</code> subscript &middot; <code>:=</code> force a definition
+        <br />
+        <span class="hint-aside">Ctrl+T is bound too, but browsers keep it for &ldquo;new tab&rdquo; &mdash; it only reaches the page in an installed/standalone window.</span>
+      </p>
+    </main>
+
+    <section class="keyboard-panel" aria-label="Math keyboard">
+      <button
+        type="button"
+        id="keyboard-toggle"
+        class="keyboard-collapse-toggle"
+        aria-controls="keyboard-dock"
+        aria-expanded="true"
+      >
+        <span class="keyboard-collapse-icon" aria-hidden="true"></span>
+        <span data-keyboard-toggle-label>Hide keyboard</span>
+      </button>
+      <div id="keyboard-dock" class="keyboard-dock"></div>
+    </section>
+
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>

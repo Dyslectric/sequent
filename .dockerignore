@@ -1,0 +1,19 @@
+# Rebuilt inside the image.
+node_modules
+dist
+
+# Never belongs in a build context: certs/ holds a private key.
+certs
+.env
+
+# The desktop shell plays no part in the container, and src-tauri/target is
+# gigabytes of Rust build output.
+src-tauri
+
+.git
+.github
+.claude
+.vite
+Dockerfile
+.dockerignore
+docker-compose.yml

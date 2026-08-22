@@ -20,7 +20,7 @@ npm install
 npm run dev
 ```
 
-`npm test` runs the evaluation-core tests (4,116 cases, no browser needed).
+`npm test` runs the evaluation-core tests (4,143 cases, no browser needed).
 
 `npm run fuzz` runs deterministic property fuzzing over domain-scoped chain
 layout, formatting round trips, incomplete editor input, and exact equality,
@@ -498,10 +498,53 @@ The keyboard's `grp` layer carries all of these; `group`, `abelian`, `subgroup`,
 `closure`, `assoc`, `identity`, `inverses`, `ring`, `field`, `distributive`,
 `unity`, and `module` are the textual shortcuts.
 
+### Identities in every group
+
+`𝖦𝗋𝗉 ⊢ L = R` is not a claim about a group on this sheet. It is a claim about
+**every** group, and unlike the theorems below it is decidable:
+
+```
+Grp ⊢ (xy)⁻¹ = y⁻¹x⁻¹           true, proved
+Grp ⊢ (x⁻¹)⁻¹ = x               true, proved
+Grp ⊢ (xy)z = x(yz)             true, proved
+Grp ⊢ x(yz)x⁻¹ = (xyx⁻¹)(xzx⁻¹) true, proved
+Grp ⊢ xy = yx                   false, disproved
+Grp ⊢ (xy)⁻¹ = x⁻¹y⁻¹           false, disproved
+```
+
+Two group words are equal in all groups exactly when they are equal in the free
+group, and equality there is equality of freely reduced words. So the whole
+procedure is: flatten each side into a word, cancel adjacent inverse pairs,
+compare. Juxtaposition is the group operation, `1` is the identity, and `x⁻¹`
+is the inverse.
+
+That decides both directions, which is the part worth noticing. A different
+reduced word means the identity already fails in the free group, so a group
+refuting it exists — `xy = yx` is **disproved**, not left unproven. The witness
+is a group rather than an assignment, so there is no variable to display and
+the verdict reads `disproved`.
+
+`𝖠𝖻𝗅 ⊢ …` adds commutativity, where the normal form is the exponent vector
+instead:
+
+```
+Abl ⊢ xy = yx                   true, proved
+Abl ⊢ (xy)³ = x³y³              true, proved
+Abl ⊢ x² = x                    false, disproved
+```
+
+None of this goes through the CAS, and that is deliberate: `Multiply` is
+commutative to Compute Engine, which canonicalises operand order, so `yx` and
+`xy` parse to the identical tree. Every non-commutative theorem would come back
+trivially true. The prover reads the term syntax itself.
+
+Every certificate is checked by the fuzzer against S₃, the smallest
+non-abelian group, under all thirty-six substitutions for its two generators.
+
 ### What this algebra is not
 
-Every predicate here verifies a *concrete finite instance*. None of them prove
-a theorem of algebra. Lagrange's theorem, Sylow's theorems, the isomorphism
+Apart from `𝖦𝗋𝗉 ⊢` and `𝖠𝖻𝗅 ⊢` above, every predicate here verifies a
+*concrete finite instance* rather than proving a theorem. Lagrange's theorem, Sylow's theorems, the isomorphism
 theorems and the classification of finite abelian groups all quantify over
 arbitrary groups, and no carrier-by-carrier check can establish a statement of
 that shape — the app has no way to take an arbitrary group as a hypothesis.
@@ -778,6 +821,7 @@ Sampling is deterministic, so the same sheet always gives the same verdict.
 | `src/lib/sets.js` | set values, set-builders, extensional lowering, finite set decisions |
 | `src/lib/analysis.js` | certificate dispatch: epsilon-delta, induction, compactness, metric balls, finite and intensional topology proofs |
 | `src/lib/algebra.js` | exact verification of finite groups, rings, fields and modules, axiom by axiom |
+| `src/lib/group-word.js` | the word problem for free and free abelian groups — identities of every group |
 | `src/lib/polynomial.js` | polynomial sign certificates and exact sign-chart routing |
 | `src/lib/rational-polynomial.js` | exact rational arithmetic, Sturm root isolation, sign charts |
 | `src/lib/quadratic-form.js` | exact positive-semidefiniteness certificates for multivariable quadratics |

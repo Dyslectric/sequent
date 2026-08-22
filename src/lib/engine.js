@@ -9,6 +9,7 @@
 import { ComputeEngine } from '@cortex-js/compute-engine';
 import { IdentifierRegistry, sanitize } from './identifiers.js';
 import { decideStatement } from './decide.js';
+import { proveGroupEquation } from './group-word.js';
 import {
   ANALYSIS_PREDICATES,
   containsAnalysisConstruct,
@@ -364,6 +365,20 @@ const UNSUPPORTED_NOTATION = [
   ],
 ];
 
+/**
+ * `𝖦𝗋𝗉 ⊢ L = R` and `𝖠𝖻𝗅 ⊢ L = R`: an equation to decide for every group, or
+ * for every abelian group. The turnstile keeps its usual reading — prove the
+ * right side from the assumptions on the left — with the group axioms as Γ.
+ */
+const EQUATIONAL_GOAL = /^\\mathsf\{(Grp|Abl)\}\s*\\vdash/;
+
+function equationalGoal(latex) {
+  const match = EQUATIONAL_GOAL.exec(latex.trim());
+  if (!match) return null;
+  const equation = latex.trim().slice(match[0].length).trim();
+  return equation ? { abelian: match[1] === 'Abl', equation } : null;
+}
+
 /** The first unsupported-notation message this line trips, if any. */
 function unsupportedNotation(latex) {
   for (const [pattern, message] of UNSUPPORTED_NOTATION) {
@@ -626,6 +641,30 @@ export class Sheet {
 
     const unsupported = unsupportedNotation(trimmed);
     if (unsupported) return { kind: 'error', message: unsupported };
+
+    // `𝖦𝗋𝗉 ⊢ …` is a claim about every group, not about a carrier on this
+    // sheet, so it is decided before the ordinary machinery sees it — and
+    // deliberately before `sanitize`, which rewrites `\vdash` into `\implies`.
+    const equational = equationalGoal(trimmed);
+    if (equational) {
+      const { latex: equation } = sanitize(equational.equation, this.registry);
+      const verdict = proveGroupEquation(equation, equational.abelian);
+      if (verdict === null) {
+        return {
+          kind: 'truth', value: null, method: 'undecided', samples: 0, counterexample: null,
+        };
+      }
+      return {
+        kind: 'truth',
+        value: verdict,
+        // False here means the identity already fails in the free group, so a
+        // group refuting it exists. That is exact, but the witness is a group
+        // rather than an assignment, and there is no variable to display.
+        method: verdict ? 'proved' : 'disproved',
+        samples: 0,
+        counterexample: null,
+      };
+    }
 
     const { latex, used } = sanitize(trimmed, this.registry);
     const prepared = rewriteReverseImplication(latex);

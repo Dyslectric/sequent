@@ -555,8 +555,100 @@ for (let index = 0; index < Math.max(60, Math.floor(engineIterations / 2)); inde
   sumOfSquaresCases++;
 }
 
+/**
+ * Group identities, checked against a group that actually exists.
+ *
+ * `Grp ⊢ L = R` claims an identity of every group, which is a claim no amount
+ * of reasoning inside the prover can confirm. So every certificate is taken to
+ * S₃ — the smallest non-abelian group — and checked under all thirty-six
+ * substitutions of its elements for the two generators. A single disagreement
+ * is a false certificate.
+ *
+ * The other direction is covered by construction: `w·w⁻¹ = 1` is an identity of
+ * every group for any word w, so the prover has to certify it.
+ */
+const S3 = [
+  [0, 1, 2], [0, 2, 1], [1, 0, 2], [1, 2, 0], [2, 0, 1], [2, 1, 0],
+];
+const compose = (left, right) => right.map((image) => left[image]);
+const invert = (permutation) => {
+  const out = [0, 0, 0];
+  permutation.forEach((image, index) => { out[image] = index; });
+  return out;
+};
+
+let groupIdentityCases = 0;
+let groupCertificates = 0;
+
+const randomWord = (length) => Array.from({ length }, () => ({
+  name: random() < 0.5 ? 'x' : 'y',
+  inverse: random() < 0.5,
+}));
+const wordLatex = (word) => (
+  word.length === 0 ? '1' : word.map((l) => `${l.name}${l.inverse ? '^{-1}' : ''}`).join('')
+);
+const wordValue = (word, assignment) => word.reduce(
+  (total, letter) => compose(
+    total,
+    letter.inverse ? invert(assignment[letter.name]) : assignment[letter.name],
+  ),
+  [0, 1, 2],
+);
+
+for (let index = 0; index < Math.max(150, engineIterations); index++) {
+  const left = randomWord(integer(1, 5));
+  let right;
+  if (random() < 0.5) {
+    // A word equal to the first: splice in a cancelling pair, which changes the
+    // spelling and not the element.
+    const at = integer(0, left.length);
+    const filler = { name: random() < 0.5 ? 'x' : 'y', inverse: random() < 0.5 };
+    right = [
+      ...left.slice(0, at), filler, { ...filler, inverse: !filler.inverse }, ...left.slice(at),
+    ];
+  } else {
+    right = randomWord(integer(1, 5));
+  }
+
+  const line = `\\mathsf{Grp}\\vdash ${wordLatex(left)}=${wordLatex(right)}`;
+  const result = new Sheet().evaluateAll([line]).at(-1);
+  groupIdentityCases++;
+  if (result?.kind !== 'truth') continue;
+
+  if (result.value === true) {
+    groupCertificates++;
+    for (const x of S3) {
+      for (const y of S3) {
+        const assignment = { x, y };
+        const before = wordValue(left, assignment);
+        const after = wordValue(right, assignment);
+        invariant(before.every((image, at) => image === after[at]),
+          'a certified group identity fails in S3',
+          { line, x, y, before, after });
+      }
+    }
+  }
+}
+
+// Every `w · w⁻¹ = 1` is an identity of every group, so none may be missed.
+let inverseIdentityCases = 0;
+for (let index = 0; index < Math.max(60, Math.floor(engineIterations / 2)); index++) {
+  const word = randomWord(integer(1, 6));
+  const reversed = [...word].reverse().map((l) => ({ ...l, inverse: !l.inverse }));
+  const line = `\\mathsf{Grp}\\vdash ${wordLatex(word)}${wordLatex(reversed)}=1`;
+  const result = new Sheet().evaluateAll([line]).at(-1);
+  invariant(
+    result?.kind === 'truth' && result.value === true && result.method === 'proved',
+    'w·w⁻¹ = 1 was not certified', { line, result },
+  );
+  inverseIdentityCases++;
+}
+
 console.log(JSON.stringify({
   seed,
+  groupIdentityCases,
+  groupCertificates,
+  inverseIdentityCases,
   quadraticFormCases,
   quadraticCertificates,
   sumOfSquaresCases,

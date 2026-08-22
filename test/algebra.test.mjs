@@ -94,6 +94,54 @@ check('a subset missing the identity',
 check('order divides order', [...Z4, 'H:=\\{0,2\\}',
   '\\operatorname{mod}(\\operatorname{card}(G),\\operatorname{card}(H))=0'], proved);
 
+console.log('== identities in every group ==');
+/**
+ * `Grp ⊢ L = R` is a claim about every group, decided by freely reducing both
+ * sides. Both directions matter: a different reduced word means the identity
+ * already fails in the free group, so a group refuting it exists and the claim
+ * is false rather than unproven.
+ */
+const inEveryGroup = (equation) => [`\\mathsf{Grp}\\vdash ${equation}`];
+const inEveryAbelian = (equation) => [`\\mathsf{Abl}\\vdash ${equation}`];
+
+check('socks and shoes', inEveryGroup('(xy)^{-1}=y^{-1}x^{-1}'), proved);
+check('double inverse', inEveryGroup('(x^{-1})^{-1}=x'), proved);
+check('inverse of the identity', inEveryGroup('1^{-1}=1'), proved);
+check('right identity', inEveryGroup('x1=x'), proved);
+check('left identity', inEveryGroup('1x=x'), proved);
+check('right inverse', inEveryGroup('xx^{-1}=1'), proved);
+check('left inverse', inEveryGroup('x^{-1}x=1'), proved);
+check('associativity', inEveryGroup('(xy)z=x(yz)'), proved);
+check('inverse of a triple', inEveryGroup('(xyz)^{-1}=z^{-1}y^{-1}x^{-1}'), proved);
+check('conjugation distributes',
+  inEveryGroup('x(yz)x^{-1}=(xyx^{-1})(xzx^{-1})'), proved);
+check('powers add', inEveryGroup('x^2x^3=x^5'), proved);
+check('negative powers cancel', inEveryGroup('x^3x^{-3}=1'), proved);
+check('a long cancellation', inEveryGroup('xyy^{-1}z z^{-1}x^{-1}=1'), proved);
+
+// Not theorems. Each of these fails in the free group, so each is false.
+check('groups need not commute', inEveryGroup('xy=yx'), exactFalse);
+check('inverses do not distribute',
+  inEveryGroup('(xy)^{-1}=x^{-1}y^{-1}'), exactFalse);
+check('not every element is idempotent', inEveryGroup('x^2=x'), exactFalse);
+check('not every element is an involution', inEveryGroup('xx=1'), exactFalse);
+check('conjugation is not trivial', inEveryGroup('xyx^{-1}=y'), exactFalse);
+
+console.log('== identities in every abelian group ==');
+check('commutativity', inEveryAbelian('xy=yx'), proved);
+check('inverses distribute when abelian',
+  inEveryAbelian('(xy)^{-1}=x^{-1}y^{-1}'), proved);
+check('powers distribute when abelian', inEveryAbelian('(xy)^3=x^3y^3'), proved);
+check('reordering a long word', inEveryAbelian('xyzxy=x^2y^2z'), proved);
+// Commutativity does not make everything true.
+check('still false when abelian', inEveryAbelian('x^2=x'), exactFalse);
+check('still false when abelian, inverses', inEveryAbelian('x=x^{-1}'), exactFalse);
+
+console.log('== outside the decidable fragment ==');
+check('not an equation', inEveryGroup('xy'), honestUnknown);
+check('an inequality', inEveryGroup('xy\\ne yx'), honestUnknown);
+check('a function nobody defined', inEveryGroup('\\sin(x)=x'), honestUnknown);
+
 console.log('== rings ==');
 const ring = (n) => [
   `R:=\\{${Array.from({ length: n }, (_, i) => i).join(',')}\\}`,

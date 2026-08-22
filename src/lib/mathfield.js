@@ -26,6 +26,8 @@ export const INLINE_SHORTCUTS = {
   unity: '\\mathsf{Uni}\\left(#?,#?,#?\\right)',
   field: '\\mathsf{Fld}\\left(#?,#?,#?,#?,#?\\right)',
   module: '\\mathsf{Mdl}\\left(#?,#?,#?,#?,#?,#?,#?\\right)',
+  grpeq: '\\mathsf{Grp}\\vdash #?=#?',
+  ableq: '\\mathsf{Abl}\\vdash #?=#?',
   assoc: '\\mathsf{Asc}\\left(#?,#?\\right)',
   identity: '\\mathsf{Idn}\\left(#?,#?,#?\\right)',
   inverses: '\\mathsf{Inv}\\left(#?,#?,#?\\right)',
@@ -377,6 +379,20 @@ export const ALGEBRA_LAYOUT = {
       key('\\mathsf{Inv}', {
         insert: '\\mathsf{Inv}(#?,#?,#?)', class: 'small', tooltip: 'inverses axiom',
       }),
+    ],
+    [
+      key('\\mathsf{Grp}\\vdash', {
+        insert: '\\mathsf{Grp}\\vdash #?=#?',
+        class: 'small',
+        tooltip: 'prove an identity in every group',
+      }),
+      key('\\mathsf{Abl}\\vdash', {
+        insert: '\\mathsf{Abl}\\vdash #?=#?',
+        class: 'small',
+        tooltip: 'prove an identity in every abelian group',
+      }),
+      key('^{-1}', { insert: '#@^{-1}', tooltip: 'inverse' }),
+      key('1', { tooltip: 'identity' }),
     ],
     [
       fn('card', '\\operatorname{card}(#?)', 'size of a finite set'),

@@ -87,6 +87,9 @@ const BUILTIN_FUNCTIONS = new Map(Object.entries({
   TopologyUnionAxiom: 'TopologyUnionAxiom', axunions: 'TopologyUnionAxiom',
   TopologyIntersectionAxiom: 'TopologyIntersectionAxiom', axintersections: 'TopologyIntersectionAxiom',
   MetricIntersectionWitness: 'MetricIntersectionWitness', meetw: 'MetricIntersectionWitness',
+  Induction: 'Induction', induction: 'Induction', induct: 'Induction',
+  InductionBase: 'InductionBase', indbase: 'InductionBase',
+  InductionStep: 'InductionStep', indstep: 'InductionStep',
 }));
 
 /**
@@ -111,6 +114,10 @@ const STYLED_BUILTIN_FUNCTIONS = new Map([
   ['mathsf:Ax:\\bigcup', 'TopologyUnionAxiom'],
   ['mathsf:Ax:\\cap', 'TopologyIntersectionAxiom'],
   ['mathsf:Meet:', 'MetricIntersectionWitness'],
+  // `Ind` is already the indiscrete topology, so induction spells it out.
+  ['mathsf:Induct:', 'Induction'],
+  ['mathsf:Base:', 'InductionBase'],
+  ['mathsf:Step:', 'InductionStep'],
   ['mathcal:O:', 'OpenIn'],
   ['mathscr:O:', 'OpenIn'],
   ['mathcal:C:', 'ClosedIn'],

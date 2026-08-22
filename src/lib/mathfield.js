@@ -16,6 +16,9 @@ export const INLINE_SHORTCUTS = {
   cart: '\\operatorname{CartesianProduct}\\left(#?,#?\\right)',
   ball: '\\operatorname{ball}\\left(#?,#?\\right)',
   closedball: '\\operatorname{closedball}\\left(#?,#?\\right)',
+  induct: '\\mathsf{Induct}\\left(#?,#?\\right)',
+  indbase: '\\mathsf{Base}\\left(#?,#?\\right)',
+  indstep: '\\mathsf{Step}\\left(#?,#?\\right)',
   cont: '\\operatorname{cont}\\left(#?,#?,#?,#?\\right)',
   limitw: '\\operatorname{limitw}\\left(#?,#?,#?,#?,#?\\right)',
   topology: '\\mathsf{Top}\\left(#?,#?\\right)',
@@ -207,10 +210,10 @@ export const SET_LAYOUT = {
   ],
 };
 
-/** Proof-oriented notation for elementary analysis and finite topology. */
+/** Proof-oriented notation for elementary analysis, induction, and topology. */
 export const ANALYSIS_LAYOUT = {
   label: 'ε–δ',
-  tooltip: 'Analysis and topology',
+  tooltip: 'Analysis, induction, and topology',
   rows: [
     [
       key('\\epsilon'), key('\\delta'), key('\\forall'), key('\\exists'), key('\\to'),
@@ -221,6 +224,17 @@ export const ANALYSIS_LAYOUT = {
       fn('cball', '\\operatorname{closedball}(#?,#?)', 'closed ball'),
       fn('cont', '\\operatorname{cont}(#?,#?,#?,#?)', 'continuity witness'),
       fn('limit', '\\operatorname{limitw}(#?,#?,#?,#?,#?)', 'limit witness'),
+    ],
+    [
+      key('\\mathsf{Induct}', {
+        insert: '\\mathsf{Induct}(#?,#?)', class: 'small', tooltip: 'induction certificate',
+      }),
+      key('\\mathsf{Base}', {
+        insert: '\\mathsf{Base}(#?,#?)', class: 'small', tooltip: 'base case only',
+      }),
+      key('\\mathsf{Step}', {
+        insert: '\\mathsf{Step}(#?,#?)', class: 'small', tooltip: 'inductive step only',
+      }),
     ],
     [
       key('\\mathcal{O}_{\\mathbb{R}}', {

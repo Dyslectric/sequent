@@ -4,6 +4,7 @@ import { materializeFiniteSet } from './sets.js';
 
 export const ANALYSIS_PREDICATES = new Set([
   'ContinuousAt', 'LimitAt',
+  'Induction', 'InductionBase', 'InductionStep',
   'Topology', 'OpenIn', 'ClosedIn', 'NeighborhoodOf',
   'MetricOpen', 'MetricClosed', 'ContinuousMap',
   'TopologyEmptyAxiom', 'TopologyCarrierAxiom',
@@ -433,9 +434,57 @@ function witnessFormula(ce, expr, definitions, makeWitness, realSymbols) {
   ]);
 }
 
+/**
+ * Induction, as two obligations rather than an appeal to a rule.
+ *
+ * `Induct(P, b)` opens the base case `P(b)` and the step
+ * `k ≥ b ∧ P(k) ⟹ P(k+1)` for a fresh `k`, and hands both to the ordinary
+ * exact machinery. `Base` and `Step` name the same obligations separately, so
+ * an induction can be walked one line at a time the way a topology is walked
+ * through its four axioms.
+ *
+ * The step is discharged over the reals, which is stronger than it needs to
+ * be: a step that holds for every real `k ≥ b` certainly holds for every
+ * integer one. That costs completeness — a step true only at the integers goes
+ * undecided — and buys soundness, which is the trade this app makes everywhere
+ * else. Certificates are never sampled, so an induction is proved exactly or
+ * not at all.
+ */
+function inductionObligations(ce, expr, definitions, makeWitness) {
+  if (expr.nops !== 2) return null;
+  const [predicateExpr, baseExpr] = expr.ops;
+  const definition = functionDefinition(predicateExpr, definitions);
+  if (!definition || !baseExpr) return null;
+
+  const base = applyFunction(definition, baseExpr);
+  const variable = ce.box(makeWitness?.() ?? 'InductionWitness');
+  const atVariable = applyFunction(definition, variable);
+  const atSuccessor = applyFunction(definition, ce.box(['Add', variable, 1]));
+  if (!base || !atVariable || !atSuccessor) return null;
+
+  return {
+    base,
+    step: ce.box(['Implies',
+      ce.box(['And', ce.box(['GreaterEqual', variable, baseExpr]), atVariable]),
+      atSuccessor,
+    ]),
+  };
+}
+
 function lowerNode(ce, expr, definitions, makeWitness, realSymbols) {
   if (!expr) return { expr, unresolvedAnalysis: false };
   const op = expr.operator;
+
+  if (op === 'Induction' || op === 'InductionBase' || op === 'InductionStep') {
+    const obligations = inductionObligations(ce, expr, definitions, makeWitness);
+    if (!obligations) return { expr, unresolvedAnalysis: true, unsafeEvaluation: true };
+    if (op === 'InductionBase') return { expr: obligations.base, unresolvedAnalysis: false };
+    if (op === 'InductionStep') return { expr: obligations.step, unresolvedAnalysis: false };
+    return {
+      expr: ce.box(['And', obligations.base, obligations.step]),
+      unresolvedAnalysis: false,
+    };
+  }
 
   if (op === 'ContinuousAt' || op === 'LimitAt') {
     const formula = witnessFormula(ce, expr, definitions, makeWitness, realSymbols);

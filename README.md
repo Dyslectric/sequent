@@ -20,7 +20,7 @@ npm install
 npm run dev
 ```
 
-`npm test` runs the evaluation-core tests (3,992 cases, no browser needed).
+`npm test` runs the evaluation-core tests (4,006 cases, no browser needed).
 
 `npm run fuzz` runs deterministic property fuzzing over domain-scoped chain
 layout, formatting round trips, incomplete editor input, and exact equality,
@@ -348,6 +348,33 @@ Extensional set algebra is also proved symbolically. For arbitrary sets, for
 example, `A ∪ ∅ = A`, `A ⊆ B ∧ B ⊆ C ⟹ A ⊆ C`, and
 `A = B ⟺ A ⊆ B ∧ B ⊆ A` are proofs rather than sampled guesses.
 
+### Induction
+
+Induction is a certificate rather than an appeal to a rule. `Induct(P, b)`
+opens two obligations and discharges both with the ordinary exact machinery:
+
+```
+P(n) := n² ≥ n
+Induct(P, 0)                   true, proved
+Base(P, 0)                     true, proved      P(0)
+Step(P, 0)                     true, proved      k ≥ 0 ∧ P(k) ⟹ P(k+1)
+```
+
+`Base` and `Step` name the same two obligations separately, so an induction can
+be walked one line at a time the way a topology is walked through its four
+axioms. A certificate that does not go through says so: with `Q(n) := n ≥ 1`,
+`Induct(Q, 0)` is false on its base case while `Induct(Q, 1)` is proved.
+
+The step is discharged over the reals, which is stronger than induction needs:
+a step holding for every real `k ≥ b` certainly holds for every integer one.
+That costs completeness and buys soundness. As with the other certificates,
+nothing here is sampled — `Induct(S, 0)` for `S(n) := 2ⁿ ≥ n+1` is `undecided`,
+because the exponential step is outside the exact machinery, and reporting it
+as "true so far" would launder evidence into a proof.
+
+The keyboard offers `𝖨𝗇𝖽𝗎𝖼𝗍`, `𝖡𝖺𝗌𝖾`, and `𝖲𝗍𝖾𝗉`; `induct`, `indbase`, and
+`indstep` are the textual shortcuts. `𝖨𝗇𝖽` remains the indiscrete topology.
+
 ### Analysis and topology
 
 The `ε–δ` keyboard layer supplies real metric balls, explicit continuity and
@@ -571,7 +598,7 @@ Sampling is deterministic, so the same sheet always gives the same verdict.
 | `src/lib/decide.js` | the symbolic + sampling decision procedure |
 | `src/lib/complex-proof.js` | exact real-part, conjugation, exponential, and cosine rewrites |
 | `src/lib/sets.js` | set values, set-builders, extensional lowering, finite set decisions |
-| `src/lib/analysis.js` | epsilon-delta certificates, metric balls, finite and intensional topology proofs |
+| `src/lib/analysis.js` | epsilon-delta and induction certificates, metric balls, finite and intensional topology proofs |
 | `src/lib/polynomial.js` | polynomial sign certificates and exact sign-chart routing |
 | `src/lib/rational-polynomial.js` | exact rational arithmetic, Sturm root isolation, sign charts |
 | `src/lib/top-level.js` | brace-aware operator splitting, and the multiline chain layout |

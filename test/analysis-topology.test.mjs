@@ -38,6 +38,38 @@ const honestUnknown = (result) => (
     ? null : 'expected an honest unknown'
 );
 
+console.log('== induction certificates ==');
+/**
+ * `Induct(P, b)` is the pair of obligations, not an appeal to a rule: the base
+ * `P(b)` and the step `k >= b and P(k) => P(k+1)` for a fresh k. Like every
+ * other certificate here it is never sampled, so a step the exact machinery
+ * cannot close is undecided rather than "true so far".
+ */
+const SQUARE = 'P(n):=n^2\\ge n';
+check('whole certificate', [SQUARE, '\\mathsf{Induct}(P,0)'], proved);
+check('base case alone', [SQUARE, '\\mathsf{Base}(P,0)'], proved);
+check('step alone', [SQUARE, '\\mathsf{Step}(P,0)'], proved);
+check('textual alias', [SQUARE, '\\operatorname{induct}(P,0)'], proved);
+check('cube from 1', ['A(n):=n^3\\ge n', '\\mathsf{Induct}(A,1)'], proved);
+check('AM-GM shaped', ['B(n):=2n\\le n^2+1', '\\mathsf{Induct}(B,0)'], proved);
+
+// A certificate that does not go through has to say so. A false base is a
+// false certificate, and the same predicate one step further along is true.
+check('false base', ['Q(n):=n\\ge1', '\\mathsf{Base}(Q,0)'], exactFalse);
+check('false base fails the whole', ['Q(n):=n\\ge1', '\\mathsf{Induct}(Q,0)'], exactFalse);
+check('same predicate, honest base', ['Q(n):=n\\ge1', '\\mathsf{Induct}(Q,1)'], proved);
+check('false step', ['R(n):=n\\le5', '\\mathsf{Step}(R,0)'], exactFalse);
+
+// Never sampled, and never guessing at what it was handed.
+check('step beyond the exact machinery',
+  ['S(n):=2^n\\ge n+1', '\\mathsf{Induct}(S,0)'], honestUnknown);
+check('undefined predicate', ['\\mathsf{Induct}(W,0)'], honestUnknown);
+check('argument is not a predicate', ['c:=5', '\\mathsf{Induct}(c,0)'], honestUnknown);
+
+// `Ind` is the indiscrete topology and must not be shadowed by induction.
+check('indiscrete topology intact',
+  ['\\tau:=\\mathsf{Ind}(\\mathbb{R})', '\\mathsf{Top}(\\tau,\\mathbb{R})'], proved);
+
 console.log('== real metric balls ==');
 check('an open ball is a first-class set', [
   '\\operatorname{OpenBall}(a,r)',

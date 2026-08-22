@@ -67,6 +67,9 @@ const DEMO_LINES = [
   'X\\cup\\varnothing=X',
   'X=Y\\iff X\\subseteq Y\\land Y\\subseteq X',
   'X\\subseteq Y\\land Y\\subseteq Z\\implies X\\subseteq Z',
+  'P(n):=n^2\\ge n',
+  '\\mathsf{Base}(P,0)\\land\\mathsf{Step}(P,0)',
+  '\\mathsf{Induct}(P,0)',
   'g(x):=2x+1',
   'd(\\epsilon):=\\epsilon/2',
   '\\operatorname{cont}(g,a,\\epsilon,d(\\epsilon))'

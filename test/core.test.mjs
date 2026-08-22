@@ -368,8 +368,15 @@ else failures.push('every definition layer should carry the digits and name oper
 if (!exprKeys.includes('#?_{#?}')) passed++;
 else failures.push('subscript should have moved off the expression tab');
 // Each shift toggles one axis and leaves the other alone.
-const shiftTarget = (id, label) => defnLayer(id).rows.flat()
-  .find((entry) => entry.label === label)?.layer;
+// Via `command`, not the `layer` keycap property — that property is in
+// MathLive's types but nothing reads it, so a key using it silently typed its
+// own label into the field instead of switching layer.
+const shiftTarget = (id, label) => {
+  const keycap = defnLayer(id).rows.flat().find((entry) => entry.label === label);
+  return Array.isArray(keycap?.command) && keycap.command[0] === 'switchKeyboardLayer'
+    ? keycap.command[1]
+    : null;
+};
 if (shiftTarget('defn-lower', '⇧') === 'defn-upper'
   && shiftTarget('defn-upper', '⇧') === 'defn-lower'
   && shiftTarget('defn-greek', '⇧') === 'defn-greek-upper'

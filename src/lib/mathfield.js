@@ -260,16 +260,19 @@ function defnLayer({ id, rows, shiftTo, greekTo, shiftActive, greekActive }) {
       rows[0],
       [{ class: 'separator w5' }, ...rows[1], { class: 'separator w5' }],
       [
+        // `switchKeyboardLayer` rather than the `layer` keycap property: the
+        // property is in MathLive's types but nothing consumes it, so the key
+        // fell through to its own label and typed a `⇧` into the field.
         {
           label: '⇧',
-          layer: shiftTo,
+          command: ['switchKeyboardLayer', shiftTo],
           tooltip: 'uppercase',
           class: `action w15${shiftActive ? ' defn-active' : ''}`,
         },
         ...rows[2],
         {
           label: 'α',
-          layer: greekTo,
+          command: ['switchKeyboardLayer', greekTo],
           tooltip: 'greek letters',
           class: `action w15${greekActive ? ' defn-active' : ''}`,
         },

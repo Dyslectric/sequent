@@ -213,10 +213,18 @@ const LATIN_ROWS = ['qwertyuiop', 'asdfghjkl', 'zxcvbnm'].map((row) => row.split
 /**
  * Greek on the QWERTY positions a Greek keyboard actually uses, so `a` is α
  * and `p` is π. `q` has no Greek counterpart and takes the variant theta.
+ *
+ * An entry may carry alternates, which appear on a long press. That is where
+ * the six `var` letters live — ε, ϑ, ϖ, ϱ, ς and φ — because all twenty-six
+ * QWERTY positions are already spoken for, and because a var form is the same
+ * letter written differently rather than a letter of its own. They are
+ * distinct names to this app, so each one is worth being able to type.
  */
 const GREEK_ROWS = [
-  ['vartheta', 'varsigma', 'epsilon', 'rho', 'tau', 'upsilon', 'theta', 'iota', 'omicron', 'pi'],
-  ['alpha', 'sigma', 'delta', 'phi', 'gamma', 'eta', 'xi', 'kappa', 'lambda'],
+  ['vartheta', 'varsigma', ['epsilon', 'varepsilon'], ['rho', 'varrho'], 'tau',
+    'upsilon', ['theta', 'vartheta'], 'iota', 'omicron', ['pi', 'varpi']],
+  ['alpha', ['sigma', 'varsigma'], 'delta', ['phi', 'varphi'], 'gamma', 'eta',
+    'xi', 'kappa', 'lambda'],
   ['zeta', 'chi', 'psi', 'omega', 'beta', 'nu', 'mu'],
 ];
 
@@ -316,7 +324,12 @@ export const DEFN_LAYOUT = {
     }),
     defnLayer({
       id: DEFN_GREEK,
-      rows: letterRows(GREEK_ROWS, (name) => key(`\\${name}`)),
+      rows: letterRows(GREEK_ROWS, (entry) => {
+        const [name, ...alternates] = Array.isArray(entry) ? entry : [entry];
+        return key(`\\${name}`, alternates.length
+          ? { variants: alternates.map((alternate) => `\\${alternate}`) }
+          : {});
+      }),
       shiftTo: DEFN_GREEK_UPPER,
       greekTo: DEFN_LOWER,
       greekActive: true,

@@ -358,6 +358,25 @@ if (greekCapitals.length === 11 && greekCapitals.includes('\\Gamma')
   && greekCapitals.includes('\\Omega') && !greekCapitals.includes('\\Alpha')) passed++;
 else failures.push(`greek capitals should be the eleven real ones: ${greekCapitals.join(' ')}`);
 
+// The six `var` letters are distinct names to this app, so each has to be
+// typeable. They sit on a long press because all twenty-six QWERTY positions
+// on the Greek layer are already spoken for.
+const greekVariants = defnLayer('defn-greek').rows.slice(1, 4).flat()
+  .flatMap((entry) => entry.variants ?? []);
+const greekDirect = defnLayer('defn-greek').rows.slice(1, 4).flat()
+  .map((entry) => entry.latex).filter(Boolean);
+if (['\\varepsilon', '\\vartheta', '\\varpi', '\\varrho', '\\varsigma', '\\varphi']
+  .every((form) => greekVariants.includes(form) || greekDirect.includes(form))) passed++;
+else failures.push(`greek var forms should be reachable: ${greekVariants.join(' ')}`);
+// A variant has to hang off the letter it is a form of, not an unrelated key.
+const variantsOf = (latex) => defnLayer('defn-greek').rows.flat()
+  .find((entry) => entry.latex === latex)?.variants ?? [];
+if (variantsOf('\\epsilon').includes('\\varepsilon')
+  && variantsOf('\\phi').includes('\\varphi')
+  && variantsOf('\\pi').includes('\\varpi')
+  && variantsOf('\\rho').includes('\\varrho')) passed++;
+else failures.push('each greek var form should be a variant of its base letter');
+
 // Every layer keeps the same non-letter keys, so switching moves nothing.
 const commonKeys = ['0', '9', '\\coloneq', '#?_{#?}', '-', '_'];
 if (['defn-lower', 'defn-upper', 'defn-greek', 'defn-greek-upper'].every((id) => (
@@ -821,6 +840,22 @@ check('ordinary fraction over d', ['d:=4', '\\frac{d}{2}=2'], isProved);
 check('prime notation proves', ['f(x):=x^3', "f'(x)=3x^2"], isProved);
 check('prime notation disproves', ['f(x):=x^3', "f'(x)=2x^2"], isFalse);
 check('second prime notation', ['f(x):=x^3', "f''(x)=6x"], isProved);
+
+console.log('== greek var forms are names of their own ==');
+// Putting these on the keyboard is only worth doing because the identifier
+// layer keeps them apart: ϵ and ε are two names, not one letter written twice.
+for (const [base, alternate] of [
+  ['epsilon', 'varepsilon'], ['theta', 'vartheta'],
+  ['rho', 'varrho'], ['sigma', 'varsigma'], ['phi', 'varphi'],
+]) {
+  check(`\\${alternate} is usable as a name`,
+    [`\\${alternate}:=3`, `\\${alternate}+1=4`], isProved);
+  check(`\\${base} and \\${alternate} are distinct`,
+    [`\\${base}:=1`, `\\${alternate}:=2`, `\\${base}\\ne\\${alternate}`], isProved);
+}
+// `\pi` is a reserved constant, but `\varpi` is an ordinary free name.
+check('varpi is free although pi is reserved', ['\\varpi:=5', '\\varpi=5'], isProved);
+check('pi keeps its built-in meaning', ['\\pi>3'], isProved);
 
 console.log('== errors and edge cases ==');
 check('empty line', [''], (r) => r.kind === 'empty' ? null : 'expected empty');

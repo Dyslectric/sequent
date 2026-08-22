@@ -20,7 +20,7 @@ npm install
 npm run dev
 ```
 
-`npm test` runs the evaluation-core tests (4,158 cases, no browser needed).
+`npm test` runs the evaluation-core tests (4,172 cases, no browser needed).
 
 `npm run fuzz` runs deterministic property fuzzing over domain-scoped chain
 layout, formatting round trips, incomplete editor input, and exact equality,
@@ -221,6 +221,11 @@ only ones the Greek shift fills in; the rest are written with a Latin capital
 and are left blank rather than becoming a different name. The digits, `:=`, the
 subscript operator, the hyphen, the underscore and the serif toggle are on
 every layer, so switching never moves anything under the finger.
+
+The six `var` letters — ε, ϑ, ϖ, ϱ, ς and φ — are a long press on the letter
+they are a form of, since all twenty-six QWERTY positions are already spoken
+for. Each is a name of its own: `ϵ` and `ε` are two different variables, and
+`ϖ` is an ordinary free name even though `π` is a reserved constant.
 
 `-` and `_` insert the bare characters, so each means whatever the channel it
 is typed into means: a hyphen and an underscore inside a serif name, a minus

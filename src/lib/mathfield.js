@@ -37,6 +37,31 @@ export const INLINE_SHORTCUTS = {
  * deliver it to the page; it only arrives in a standalone/PWA window. Alt+T is
  * bound alongside it as the combination that works in an ordinary tab.
  */
+/**
+ * Combinations the host gets to keep.
+ *
+ * MathLive claims several of these by default, and a mathfield holds focus for
+ * almost the whole time this app is open — so the address bar and the back
+ * button quietly stop working, with no clue as to why. A handful of MathLive
+ * shortcuts are worth less than the browser behaving like a browser.
+ *
+ * `alt+[Home]`, `alt+e` and `alt+f` are not bound by MathLive today; they are
+ * listed so that they stay unbound if that changes.
+ */
+export const BROWSER_RESERVED_KEYS = new Set([
+  'alt+d',             // focus the address bar
+  'alt+[ArrowLeft]',   // back
+  'alt+[ArrowRight]',  // forward
+  'alt+[Home]',        // home page
+  'alt+e',             // browser menu (Chrome) / Edit menu (Firefox)
+  'alt+f',             // browser menu (Chrome) / File menu (Firefox)
+]);
+
+/** Drop the bindings that would shadow the browser's own shortcuts. */
+export function releaseBrowserKeys(keybindings) {
+  return keybindings.filter((binding) => !BROWSER_RESERVED_KEYS.has(binding.key));
+}
+
 export const KEYBINDINGS = [
   { key: 'ctrl+t', ifMode: 'math', command: ['switchMode', 'text'] },
   { key: 'ctrl+t', ifMode: 'text', command: ['switchMode', 'math'] },
@@ -182,6 +207,6 @@ export function configureMathfield(mf) {
   mf.removeExtraneousParentheses = false;
   mf.menuItems = [];
   mf.inlineShortcuts = { ...mf.inlineShortcuts, ...INLINE_SHORTCUTS };
-  mf.keybindings = [...mf.keybindings, ...KEYBINDINGS];
+  mf.keybindings = [...releaseBrowserKeys(mf.keybindings), ...KEYBINDINGS];
   return mf;
 }

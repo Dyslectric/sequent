@@ -201,6 +201,11 @@ the on-screen keys, or write `⌊ ⌋` / `⌈ ⌉`).
   *Ctrl+T is bound too, and works in the desktop app, which has no tab bar to
   claim it. In an ordinary browser tab Ctrl+T is reserved for "new tab" and
   never reaches the page; Alt+T is the combination that works there.*
+- Browser shortcuts stay with the browser. A mathfield holds focus almost the
+  whole time this app is open, and MathLive binds **Alt+D**, **Alt+←** and
+  **Alt+→** by default — so the address bar and the back button would quietly
+  stop working with no clue as to why. Those are unbound, along with Alt+Home,
+  Alt+E and Alt+F.
 - **`_`** subscripts. A subscript is part of the name (`v_max` is one variable),
   and is formatted independently of its base — `v` stays math-italic while a
   serif subscript stays serif.

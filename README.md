@@ -141,13 +141,13 @@ docker build -t sequent .
 docker run --rm -p 8080:80 sequent
 ```
 
-Pushing to `main` publishes `ghcr.io/<owner>/sequent` for `linux/amd64` and
+Pushing to `main` publishes `ghcr.io/dyslectric/sequent` for `linux/amd64` and
 `linux/arm64`; tagging `v*` publishes the matching semver tags. The workflow
 runs the test suite before it builds, and pull requests build without pushing.
 
 ### Behind Traefik
 
-Copy `.env.example` to `.env`, set `GHCR_OWNER` and `SEQUENT_DOMAIN`, then:
+Copy `.env.example` to `.env`, set `SEQUENT_DOMAIN`, then:
 
 ```bash
 docker compose pull && docker compose up -d

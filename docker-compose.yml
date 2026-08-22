@@ -8,7 +8,10 @@
 
 services:
   sequent:
-    image: ghcr.io/${GHCR_OWNER}/sequent:${SEQUENT_TAG:-latest}
+    # Lowercase deliberately: the GitHub account is Dyslectric, but registry
+    # paths must be lowercase and Docker rejects the reference outright
+    # otherwise. GHCR resolves the two to the same package.
+    image: ghcr.io/dyslectric/sequent:${SEQUENT_TAG:-latest}
     container_name: sequent
     restart: unless-stopped
 

@@ -5,6 +5,8 @@ a value show it right-aligned on the same line. A line carrying a claim is read
 against everything defined above it and answered with a verdict — the shape of a
 sequent, `Γ ⊨ ∀x̄. φ`, which is where the name comes from.
 
+Try it at [sequent.dyslectric.dev](https://sequent.dyslectric.dev).
+
 The main page opens as a blank sheet; open `#demo` (or use the **Demo** link in
 the header) for a curated example sheet. The working sheet is saved locally and
 serialized live into its `#sheet=...` URL; copying the address copies the sheet.

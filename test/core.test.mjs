@@ -11,6 +11,7 @@ import {
 import {
   ALGEBRA_LAYOUT,
   ANALYSIS_LAYOUT,
+  DEFN_LAYOUT,
   EXPR_LAYOUT,
   INLINE_SHORTCUTS,
   KEYBOARD_LAYOUTS,
@@ -292,10 +293,10 @@ else failures.push('expression Backspace should use the button-sized icon treatm
 const boxedTemplateKeys = EXPR_LAYOUT.rows.flat().filter((entry) => (
   [
     '\\lfloor#?\\rfloor', '\\lceil#?\\rceil', '\\frac{#?}{#?}',
-    '#?^{#?}', '#?^2', '#?_{#?}', '\\sqrt{#?}', '\\sqrt[#?]{#?}',
+    '#?^{#?}', '#?^2', '\\sqrt{#?}', '\\sqrt[#?]{#?}',
   ].includes(entry.latex) || entry.label === '|x|'
 ));
-if (boxedTemplateKeys.length === 9
+if (boxedTemplateKeys.length === 8
   && boxedTemplateKeys.every((entry) => entry.class?.split(/\s+/).includes('small'))) passed++;
 else failures.push('boxed expression templates should use the smaller keycap scale');
 const functionKeyLabels = EXPR_LAYOUT.rows[1]
@@ -318,16 +319,47 @@ else failures.push('expression tab is missing a value key');
 // Deliberately absent from the expression tab.
 if (!exprKeys.includes(',') && !EXPR_LAYOUT.rows.flat().some((entry) => entry.command)) passed++;
 else failures.push('expression tab should carry no comma and no serif toggle');
+
+// Naming is its own tab: every letter a name can start with, both alphabets,
+// the digits, and the two operators that introduce a name.
+const defnCaps = DEFN_LAYOUT.rows.flat();
+const defnKeys = defnCaps.map((entry) => entry.latex ?? entry.key ?? entry.label);
+if ('abcdefghijklmnopqrstuvwxyz'.split('').every((letter) => defnKeys.includes(letter))) passed++;
+else failures.push('definition tab is missing a latin letter');
+if (['\\alpha', '\\beta', '\\gamma', '\\pi', '\\sigma', '\\omega', '\\theta', '\\lambda']
+  .every((letter) => defnKeys.includes(letter))) passed++;
+else failures.push('definition tab is missing a greek letter');
+if ('0123456789'.split('').every((digit) => defnKeys.includes(digit))) passed++;
+else failures.push('definition tab is missing a digit');
+if (defnKeys.includes('\\coloneq') && defnKeys.includes('#?_{#?}')
+  && defnKeys.includes('-') && defnKeys.includes('_')) passed++;
+else failures.push('definition tab should carry :=, subscript, hyphen and underscore');
+// Subscript belongs to naming, not to arithmetic.
+if (!exprKeys.includes('#?_{#?}')) passed++;
+else failures.push('subscript should have moved off the expression tab');
+// Uppercase is reachable by long press rather than by a row of its own.
+const upperVariants = defnCaps.filter((entry) => entry.variants?.length);
+if (upperVariants.length >= 26
+  && defnCaps.find((entry) => entry.latex === 'a')?.variants?.includes('A')
+  && defnCaps.find((entry) => entry.latex === '\\gamma')?.variants?.includes('\\Gamma')) passed++;
+else failures.push('definition tab should reach uppercase through keycap variants');
+// A hyphen or underscore in a name only works in the serif channel, so the
+// toggle has to be within reach of the keys that need it.
+if (DEFN_LAYOUT.rows.flat().some((entry) => (
+  Array.isArray(entry.command) && entry.command[0] === 'switchMode'
+))) passed++;
+else failures.push('definition tab should expose the serif toggle');
 if (relKeys.filter((entry) => entry === '=').length === 1) passed++;
 else failures.push('relation tab should carry exactly one equals key');
 
 if (KEYBOARD_LAYOUTS[0] === EXPR_LAYOUT
   && KEYBOARD_LAYOUTS[1] === REL_LAYOUT
-  && KEYBOARD_LAYOUTS[2] === SET_LAYOUT
-  && KEYBOARD_LAYOUTS[3] === ANALYSIS_LAYOUT
-  && KEYBOARD_LAYOUTS[4] === TOPOLOGY_LAYOUT
-  && KEYBOARD_LAYOUTS[5] === ALGEBRA_LAYOUT
-  && JSON.stringify(KEYBOARD_LAYOUTS.slice(6)) === JSON.stringify(['alphabetic', 'greek'])) passed++;
+  && KEYBOARD_LAYOUTS[2] === DEFN_LAYOUT
+  && KEYBOARD_LAYOUTS[3] === SET_LAYOUT
+  && KEYBOARD_LAYOUTS[4] === ANALYSIS_LAYOUT
+  && KEYBOARD_LAYOUTS[5] === TOPOLOGY_LAYOUT
+  && KEYBOARD_LAYOUTS[6] === ALGEBRA_LAYOUT
+  && JSON.stringify(KEYBOARD_LAYOUTS.slice(7)) === JSON.stringify(['alphabetic', 'greek'])) passed++;
 else failures.push('redundant numeric and symbols keyboard tabs should be removed');
 const setKeys = SET_LAYOUT.rows.flat().map((entry) => entry.latex ?? entry.insert ?? entry.label);
 if (['\\in', '\\notin', '\\subseteq', '\\cup', '\\cap', '\\setminus', '\\varnothing', '\\times',

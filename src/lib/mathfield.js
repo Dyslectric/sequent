@@ -171,9 +171,10 @@ export const EXPR_LAYOUT = {
       { latex: '#?^2', insert: '^2', tooltip: 'square', class: 'small' },
       { latex: '\\sqrt{#?}', tooltip: 'square root', class: 'small' },
       { latex: '\\sqrt[#?]{#?}', tooltip: 'radical', class: 'small' },
-      { latex: '#?_{#?}', insert: '_{#?}', tooltip: 'subscript', class: 'small' },
       key('e', { tooltip: "Euler's number" }),
-      { class: 'separator w5' },
+      // Subscript is part of a *name*, so it lives on the `defn` tab. The
+      // separator widens to keep the digit column where the other rows put it.
+      { class: 'separator w15' },
       key('1'), key('2'), key('3'), key('-'),
     ],
     [
@@ -186,6 +187,66 @@ export const EXPR_LAYOUT = {
       key('0', { width: 2 }), key('.'), key('+'),
     ],
     [
+      { label: '[left]', tooltip: 'move left' },
+      { label: '[right]', tooltip: 'move right' },
+      { label: '[backspace]', tooltip: 'backspace', class: 'action hide-shift calc-backspace' },
+      { label: '[return]', tooltip: 'new line' },
+    ],
+  ],
+};
+
+/**
+ * Naming things: the letters a name can be made of, and the two operators that
+ * introduce one.
+ *
+ * Uppercase is a long press rather than a row of its own — `A` on `a`, `Γ` on
+ * `γ` — which is what keeps the whole alphabet, the Greek alphabet and the
+ * digits on one tab instead of three.
+ *
+ * `-` and `_` insert the bare characters, so they mean what the channel they
+ * are typed into means: a hyphen and an underscore inside a serif name, a
+ * minus sign and a subscript outside one. That is why the serif toggle sits
+ * here too — `\text{max-speed}` is a name, `max-speed` is a subtraction.
+ */
+const letterKey = (lower) => ({ latex: lower, variants: [lower.toUpperCase()] });
+const greekKey = (command, capital) => ({
+  latex: `\\${command}`,
+  ...(capital ? { variants: [`\\${capital}`] } : {}),
+});
+
+export const DEFN_LAYOUT = {
+  label: 'defn',
+  tooltip: 'Names and definitions',
+  rows: [
+    [
+      key('1'), key('2'), key('3'), key('4'), key('5'),
+      key('6'), key('7'), key('8'), key('9'), key('0'),
+      { ...defineKey, width: 2 },
+      { latex: '#?_{#?}', insert: '_{#?}', tooltip: 'subscript', class: 'small' },
+    ],
+    'abcdefghijklm'.split('').map(letterKey),
+    'nopqrstuvwxyz'.split('').map(letterKey),
+    [
+      greekKey('alpha'), greekKey('beta'), greekKey('gamma', 'Gamma'),
+      greekKey('delta', 'Delta'), greekKey('epsilon'), greekKey('zeta'),
+      greekKey('eta'), greekKey('theta', 'Theta'), greekKey('iota'),
+      greekKey('kappa'), greekKey('lambda', 'Lambda'), greekKey('mu'),
+      greekKey('nu'),
+    ],
+    [
+      greekKey('xi', 'Xi'), greekKey('omicron'), greekKey('pi', 'Pi'),
+      greekKey('rho'), greekKey('sigma', 'Sigma'), greekKey('tau'),
+      greekKey('upsilon', 'Upsilon'), greekKey('phi', 'Phi'), greekKey('chi'),
+      greekKey('psi', 'Psi'), greekKey('omega', 'Omega'),
+      { label: '-', key: '-', tooltip: 'hyphen in a serif name, minus outside one' },
+      { label: '_', key: '_', tooltip: 'underscore in a serif name, subscript outside one' },
+    ],
+    [
+      {
+        label: '<span style="font-family:Georgia,serif;font-size:0.9em">abc</span>',
+        command: ['switchMode', 'text'],
+        tooltip: 'serif text, for names longer than one letter (Ctrl+T)',
+      },
       { label: '[left]', tooltip: 'move left' },
       { label: '[right]', tooltip: 'move right' },
       { label: '[backspace]', tooltip: 'backspace', class: 'action hide-shift calc-backspace' },
@@ -441,7 +502,8 @@ export const ALGEBRA_LAYOUT = {
 
 /** The custom layers subsume MathLive's stock numeric and symbol tabs. */
 export const KEYBOARD_LAYOUTS = [
-  EXPR_LAYOUT, REL_LAYOUT, SET_LAYOUT, ANALYSIS_LAYOUT, TOPOLOGY_LAYOUT, ALGEBRA_LAYOUT,
+  EXPR_LAYOUT, REL_LAYOUT, DEFN_LAYOUT,
+  SET_LAYOUT, ANALYSIS_LAYOUT, TOPOLOGY_LAYOUT, ALGEBRA_LAYOUT,
   'alphabetic', 'greek',
 ];
 

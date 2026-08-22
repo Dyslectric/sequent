@@ -35,6 +35,15 @@ function neg(a) { return a.n === 0n ? ZERO : { n: -a.n, d: a.d }; }
 function compare(a, b) { return (a.n * b.d > b.n * a.d) ? 1 : (a.n * b.d < b.n * a.d ? -1 : 0); }
 function sign(a) { return a.n > 0n ? 1 : a.n < 0n ? -1 : 0; }
 
+/**
+ * The exact rational arithmetic this module runs on, for other provers that
+ * also refuse to grant a proof on floating point. Shared rather than copied so
+ * there is one definition of what "exact" means here.
+ */
+export const Rational = Object.freeze({
+  ZERO, ONE, rat, add, sub, mul, div, neg, compare, sign,
+});
+
 function rationalFromString(value) {
   const match = String(value).trim().match(/^([+-]?)(\d+)(?:\.(\d*))?(?:[eE]([+-]?\d+))?$/);
   if (!match) return null;

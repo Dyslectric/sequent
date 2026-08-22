@@ -197,6 +197,51 @@ for (const [label, latex] of falseStatements) {
   expectFalse('counterexample', label, latex);
 }
 
+/**
+ * Global sign certificates in several variables. Every one of these used to be
+ * reported as "no counterexample in N samples"; each has a one-line proof, and
+ * the point of the certificate is to find it.
+ */
+const quadraticForms = [
+  ['AM-GM, two variables', 'a^2+b^2\\ge2ab'],
+  ['AM-GM, reversed', '2ab\\le a^2+b^2'],
+  ['three-variable cross terms', 'x^2+y^2+z^2\\ge xy+yz+zx'],
+  ['positive definite with cross term', 'x^2+xy+y^2\\ge0'],
+  ['strict, shifted', 'x^2-2xy+y^2+1>0'],
+  ['strict, no cross term', 'x^2+y^2+1>0'],
+  ['degenerate direction stays strict', 'x^2+1>0'],
+  ['completed square in two variables', 'x^2+2xy+y^2+2x+2y+1\\ge0'],
+  ['scaled form', '4x^2+4xy+y^2\\ge0'],
+  ['rational coefficients', '\\frac{1}{2}x^2+\\frac{1}{2}y^2\\ge xy'],
+];
+for (const [label, latex] of quadraticForms) {
+  expectProved('quadratic form', label, latex);
+}
+
+const squaresInDisguise = [
+  ['Cauchy-Schwarz in two dimensions', '(ac+bd)^2\\le(a^2+b^2)(c^2+d^2)'],
+  ['Lagrange identity', '(a^2+b^2)(c^2+d^2)-(ac+bd)^2=(ad-bc)^2'],
+  ['quartic AM-GM', 'x^4+y^4\\ge2x^2y^2'],
+  ['difference of squares, squared', '(x^2-y^2)^2\\ge0'],
+];
+for (const [label, latex] of squaresInDisguise) {
+  expectProved('square in disguise', label, latex);
+}
+
+// The certificate must not turn indefinite forms into proofs. Each of these is
+// negative somewhere and has to be refuted, not certified.
+const indefiniteForms = [
+  ['cross term too large', 'x^2+3xy+y^2\\ge0'],
+  ['cross term too large, reversed', 'x^2+y^2\\ge3xy'],
+  ['missing constant makes it strict-false', 'x^2+2x\\ge0'],
+  ['negative diagonal', '-x^2-y^2\\ge1'],
+  ['semidefinite is not definite', '(x-y)^2>0'],
+  ['saddle', 'x^2-y^2\\ge0'],
+];
+for (const [label, latex] of indefiniteForms) {
+  expectFalse('indefinite form', label, latex);
+}
+
 if (failures.length) {
   console.error(`\n${failures.join('\n\n')}\n`);
   console.error(`${passed} passed, ${failures.length} failed`);

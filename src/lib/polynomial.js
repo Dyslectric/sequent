@@ -25,6 +25,7 @@ import {
   decideRationalPolynomialImplication,
   decideRationalPolynomialRelation,
 } from './rational-polynomial.js';
+import { proveQuadraticFormNonNegative } from './quadratic-form.js';
 
 const MAX_DEGREE = 16;
 
@@ -363,6 +364,36 @@ export function proveRelationBySign(ce, relation) {
     expanded = ce.box(['Expand', diff]).evaluate();
   } catch { /* use the original */ }
   if (satisfiesSign(kind, structuralSign(expanded))) return true;
+
+  // A polynomial identity in several variables is settled by expanding both
+  // sides — `(a²+b²)(c²+d²) - (ac+bd)² - (ad-bc)²` is the zero polynomial, and
+  // saying so is a proof rather than the sampled agreement it was reported as.
+  if (kind === 'eq' && variables.length > 1) {
+    try {
+      if (expanded.is(0) === true || expanded.simplify().is(0) === true) return true;
+    } catch { /* not identically zero */ }
+  }
+
+  // Many multivariable inequalities are a single square wearing an expanded
+  // form: `x⁴ + y⁴ - 2x²y²` is `(x² - y²)²`, and Cauchy–Schwarz in two
+  // dimensions is Lagrange's `(ad - bc)²`. Factoring puts the square back
+  // where `structuralSign` can see it.
+  if (variables.length > 1) {
+    let factored = null;
+    try {
+      factored = ce.box(['Factor', expanded]).evaluate();
+    } catch { /* no factorisation available */ }
+    if (factored && satisfiesSign(kind, structuralSign(factored))) return true;
+  }
+
+  // Several variables, degree two: an exact positive-semidefiniteness test on
+  // the homogenised coefficient matrix. This is what turns the ordinary
+  // multivariable inequalities — `a² + b² ≥ 2ab` and its relatives — from
+  // "no counterexample in N samples" into proofs.
+  if (proveQuadraticFormNonNegative(ce, diff, kind) === true) return true;
+  if (expanded !== diff && proveQuadraticFormNonNegative(ce, expanded, kind) === true) {
+    return true;
+  }
 
   return null;
 }

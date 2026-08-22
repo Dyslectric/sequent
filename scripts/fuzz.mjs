@@ -447,8 +447,119 @@ for (let run = 0; run < engineIterations; run++) {
   infiniteTopologyCases++;
 }
 
+/**
+ * Quadratic-form certificates, checked adversarially.
+ *
+ * The prover grants global non-negativity from a positive-semidefiniteness
+ * test, so every certificate it grants is an assertion about every real point
+ * at once. Each one is put back under a dense search for a point where the
+ * polynomial goes negative — a single hit is a false certificate, which is the
+ * one failure this app must never have.
+ */
+const QUADRATIC_NAMES = ['x', 'y', 'z'];
+let quadraticFormCases = 0;
+let quadraticCertificates = 0;
+
+for (let index = 0; index < Math.max(120, engineIterations); index++) {
+  const arity = integer(2, 3);
+  const square = Array.from({ length: arity }, () => integer(-3, 4));
+  const linear = Array.from({ length: arity }, () => integer(-3, 3));
+  const constant = integer(-3, 4);
+  const cross = [];
+  for (let i = 0; i < arity; i++) {
+    for (let j = i + 1; j < arity; j++) cross.push([i, j, integer(-4, 4)]);
+  }
+
+  const terms = [];
+  for (let i = 0; i < arity; i++) if (square[i]) terms.push(`${square[i]}${QUADRATIC_NAMES[i]}^2`);
+  for (const [i, j, k] of cross) {
+    if (k) terms.push(`${k}${QUADRATIC_NAMES[i]}${QUADRATIC_NAMES[j]}`);
+  }
+  for (let i = 0; i < arity; i++) if (linear[i]) terms.push(`${linear[i]}${QUADRATIC_NAMES[i]}`);
+  if (constant) terms.push(String(constant));
+  if (!terms.length) continue;
+  const polynomial = terms.join('+').replace(/\+-/g, '-');
+
+  const valueAt = (point) => {
+    let total = constant;
+    for (let i = 0; i < arity; i++) {
+      total += square[i] * point[i] * point[i] + linear[i] * point[i];
+    }
+    for (const [i, j, k] of cross) total += k * point[i] * point[j];
+    return total;
+  };
+
+  const GRID = [-1000, -100, -10, -3, -2, -1.5, -1, -0.5, 0, 0.5, 1, 1.5, 2, 3, 10, 100, 1000];
+  const negativeWitness = (strict) => {
+    const violates = (value) => (strict ? value <= -1e-9 || value === 0 : value < -1e-9);
+    const point = new Array(arity).fill(0);
+    const walk = (position) => {
+      if (position === arity) return violates(valueAt(point)) ? [...point] : null;
+      for (const candidate of GRID) {
+        point[position] = candidate;
+        const found = walk(position + 1);
+        if (found) return found;
+      }
+      return null;
+    };
+    const gridHit = walk(0);
+    if (gridHit) return gridHit;
+    for (let trial = 0; trial < 500; trial++) {
+      const sample = Array.from({ length: arity }, () => (random() * 2 - 1) * 25);
+      if (violates(valueAt(sample))) return sample;
+    }
+    return null;
+  };
+
+  for (const [operator, strict] of [['\\ge', false], ['>', true]]) {
+    const line = `${polynomial}${operator}0`;
+    const result = new Sheet().evaluateAll([line]).at(-1);
+    quadraticFormCases++;
+    if (result?.kind !== 'truth' || result.value !== true || result.method !== 'proved') continue;
+    quadraticCertificates++;
+    const witness = negativeWitness(strict);
+    invariant(witness === null, 'quadratic-form certificate is false', {
+      line, witness, value: witness ? valueAt(witness) : null,
+    });
+  }
+}
+
+/**
+ * The other direction. A sum of squares of affine forms has a positive
+ * semidefinite matrix by construction, so the certificate must be granted —
+ * this is the test that the prover keeps its reach, not just its honesty.
+ */
+let sumOfSquaresCases = 0;
+for (let index = 0; index < Math.max(60, Math.floor(engineIterations / 2)); index++) {
+  const arity = integer(2, 3);
+  const names = QUADRATIC_NAMES.slice(0, arity);
+  const affine = () => {
+    const parts = [];
+    for (const name of names) {
+      const coefficient = integer(-3, 3);
+      if (coefficient) parts.push(`${coefficient}${name}`);
+    }
+    const constant = integer(-2, 2);
+    if (constant) parts.push(String(constant));
+    return parts.length ? parts.join('+').replace(/\+-/g, '-') : null;
+  };
+  const squares = [affine(), affine()].filter(Boolean);
+  if (!squares.length) continue;
+  const line = `${squares.map((form) => `\\left(${form}\\right)^2`).join('+')}\\ge0`;
+  const result = new Sheet().evaluateAll([line]).at(-1);
+  invariant(
+    result?.kind === 'truth' && result.value === true && result.method === 'proved',
+    'a sum of squares was not certified non-negative',
+    { line, result },
+  );
+  sumOfSquaresCases++;
+}
+
 console.log(JSON.stringify({
   seed,
+  quadraticFormCases,
+  quadraticCertificates,
+  sumOfSquaresCases,
   parserCases,
   malformedCases,
   malformedEvaluations,

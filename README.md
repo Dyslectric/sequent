@@ -20,7 +20,7 @@ npm install
 npm run dev
 ```
 
-`npm test` runs the evaluation-core tests (4,006 cases, no browser needed).
+`npm test` runs the evaluation-core tests (4,026 cases, no browser needed).
 
 `npm run fuzz` runs deterministic property fuzzing over domain-scoped chain
 layout, formatting round trips, incomplete editor input, and exact equality,
@@ -541,6 +541,27 @@ Statements with free variables go through three passes:
      everywhere nonzero preserves equation zero sets, and an everywhere-positive
      factor preserves strict and non-strict inequalities. These certificates
      work for multivariable polynomials without expanding them.
+   - **Quadratic forms in several variables.** A polynomial of total degree two
+     is `xᵀAx + bᵀx + c`, which homogenises to `[x;1]ᵀM[x;1]`, and the whole
+     question of its global sign is whether `M` is positive semidefinite —
+     decided exactly by Cholesky with rational pivots. This is what proves
+     `a² + b² ≥ 2ab` and `x² + y² + z² ≥ xy + yz + zx` rather than sampling
+     them. The coefficients are read off by evaluating at the origin, at each
+     `±eᵢ` and at each `eᵢ + eⱼ`, and then the reconstruction is verified
+     against the original expression — guess the shape, check it exactly, the
+     same bargain the affine-consequent prover makes.
+
+     Positive semidefiniteness gives `p ≥ 0`. For `p > 0` the polynomial must
+     additionally have no real zero, and a zero is exactly a kernel vector of
+     `M` whose last coordinate is nonzero — so the homogenising coordinate is
+     eliminated last and the final pivot answers it. `x² + 1` in the variables
+     `(x, y)` is the case that rules out the easier test: `M` is singular, and
+     the polynomial is strictly positive everywhere regardless.
+   - **Squares in disguise.** A difference that expands into mixed signs is
+     often a single square: `x⁴ + y⁴ - 2x²y²` is `(x² - y²)²`, and
+     Cauchy–Schwarz in two dimensions is Lagrange's `(ad - bc)²`. Factoring
+     restores the structural certificate that expansion destroyed. Polynomial
+     identities in several variables are settled by expansion.
    - **Exact polynomial sign charts.** For single-variable polynomials with
      rational coefficients, Sturm sequences isolate every real root using
      exact integer/rational arithmetic. Testing each root and each interval
@@ -601,6 +622,7 @@ Sampling is deterministic, so the same sheet always gives the same verdict.
 | `src/lib/analysis.js` | epsilon-delta and induction certificates, metric balls, finite and intensional topology proofs |
 | `src/lib/polynomial.js` | polynomial sign certificates and exact sign-chart routing |
 | `src/lib/rational-polynomial.js` | exact rational arithmetic, Sturm root isolation, sign charts |
+| `src/lib/quadratic-form.js` | exact positive-semidefiniteness certificates for multivariable quadratics |
 | `src/lib/top-level.js` | brace-aware operator splitting, and the multiline chain layout |
 | `src/lib/mathfield.js` | MathLive shortcuts, keybindings, docked keyboard |
 | `src/main.js` | rows, navigation, theme, persistence, export/import |
@@ -643,7 +665,12 @@ applied to arguments — before parsing, and rewritten back for display.
   Multivariable nonlinear cases additionally recognize exact scaling,
   divisibility, integer-power sign/zero-set transformations, globally nonzero
   equation factors, globally positive inequality factors, and structural sign
-  certificates. Other cases fall back to sampling.
+  certificates. Multivariable polynomials of total degree two are decided
+  completely, by an exact positive-semidefiniteness test. Beyond degree two the
+  prover recognises a difference that factors into a square but has no general
+  sum-of-squares search, so `x⁴ + y⁴ ≥ 2x²y²` is proved while an arbitrary
+  quartic is not. Statements involving absolute values are not case-split, so
+  the triangle inequality is still sampled. Other cases fall back to sampling.
 - The supported set fragment is extensional rather than a general axiomatic set
   theory: finite sets, standard numeric domains, numeric set-builders, ordinary
   set operations, power sets, Cartesian products, membership, subset/superset,

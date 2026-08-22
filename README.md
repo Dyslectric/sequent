@@ -127,6 +127,48 @@ The desktop build deliberately does not register a service worker: it already
 carries every asset locally, so a worker would only put a staler cache in front
 of files that are already on disk.
 
+## Hosting it
+
+The sheet is static, so hosting it is just serving files. The image is a
+two-stage build — Node produces `dist/`, nginx serves it — and nothing runs
+server-side.
+
+```bash
+docker build -t sequent .
+```
+
+```bash
+docker run --rm -p 8080:80 sequent
+```
+
+Pushing to `main` publishes `ghcr.io/<owner>/sequent` for `linux/amd64` and
+`linux/arm64`; tagging `v*` publishes the matching semver tags. The workflow
+runs the test suite before it builds, and pull requests build without pushing.
+
+### Behind Traefik
+
+Copy `.env.example` to `.env`, set `GHCR_OWNER` and `SEQUENT_DOMAIN`, then:
+
+```bash
+docker compose pull && docker compose up -d
+```
+
+The compose file expects Traefik to already be running with a Docker provider
+and a certificate resolver — it adds a routed service rather than standing up a
+proxy. No ports are published; Traefik reaches the container over the shared
+external network.
+
+Serving it this way also settles the PWA question from the previous section for
+good: a real certificate on a real domain is a secure origin everywhere, so the
+service worker registers and the app installs with no local CA to trust.
+
+Two details in `docker/nginx.conf` that matter more than they look. Assets are
+content-hashed and served `immutable` for a year, while `index.html`, `sw.js`
+and the manifest always revalidate — caching those three is exactly how a PWA
+gets permanently stuck on an old build. And the bundle is precompressed at
+build time and served with `gzip_static`, rather than gzipping 3.3 MB per
+visitor.
+
 ## What a line can be
 
 | Input | Result |
@@ -294,6 +336,8 @@ Sampling is deterministic, so the same sheet always gives the same verdict.
 | `src-tauri/` | the Tauri desktop shell — window config, icons, Rust entry point |
 | `scripts/` | Linux packaging, its install scripts, and the local-HTTPS certificate generator |
 | `public/` | PWA icons, copied to the build root |
+| `Dockerfile`, `docker/` | the static nginx image and its cache and compression rules |
+| `.github/workflows/` | tests, then a multi-arch image published to GHCR |
 
 The identifier layer exists because Compute Engine's LaTeX parser splits letter
 runs into implicit products (`maxSpeed` → `m·a·x·S·p·e·e·d`) and because some

@@ -20,7 +20,7 @@ npm install
 npm run dev
 ```
 
-`npm test` runs the evaluation-core tests (4,082 cases, no browser needed).
+`npm test` runs the evaluation-core tests (4,098 cases, no browser needed).
 
 `npm run fuzz` runs deterministic property fuzzing over domain-scoped chain
 layout, formatting round trips, incomplete editor input, and exact equality,
@@ -441,8 +441,36 @@ An infinite carrier, an undefined operation, or an operation of the wrong arity
 is `undecided` — never sampled. Carriers above sixteen elements are refused
 rather than checked, associativity being the constraint at n³ obligations.
 
+### Rings and fields
+
+Two operations on one carrier, checked the same way:
+
+```
+R := {0, 1, 2, 3, 4}
+p(a, b) := mod(a + b, 5)
+t(a, b) := mod(a·b, 5)
+Rng(R, p, t, 0)                true, proved
+Fld(R, p, t, 0, 1)             true, proved
+Dst(R, p, t)                   distributivity alone
+Uni(R, t, 1)                   multiplicative identity alone
+```
+
+`Rng` asks for an abelian group under addition, an associative closed
+multiplication, and both distributive laws. `Fld` asks additionally for
+commutative multiplication, a unit, and an inverse for everything except zero.
+
+Where a field fails is exactly where it should. `ℤ/4` and `ℤ/6` are rings and
+not fields — 2 has no inverse mod 4 — while `ℤ/2`, `ℤ/3` and `ℤ/5` are fields.
+The one-element ring satisfies every other axiom and is still refused, because
+zero and one coincide there.
+
+Both distributive laws are checked separately rather than one being inferred
+from the other: a ring whose multiplication does not commute must satisfy both,
+and checking only the left one would certify structures that are not rings.
+
 The keyboard's `grp` layer carries all of these; `group`, `abelian`, `subgroup`,
-`closure`, `assoc`, `identity`, and `inverses` are the textual shortcuts.
+`closure`, `assoc`, `identity`, `inverses`, `ring`, `field`, `distributive`,
+and `unity` are the textual shortcuts.
 
 ### Analysis and topology
 
@@ -713,7 +741,7 @@ Sampling is deterministic, so the same sheet always gives the same verdict.
 | `src/lib/complex-proof.js` | exact real-part, conjugation, exponential, and cosine rewrites |
 | `src/lib/sets.js` | set values, set-builders, extensional lowering, finite set decisions |
 | `src/lib/analysis.js` | certificate dispatch: epsilon-delta, induction, compactness, metric balls, finite and intensional topology proofs |
-| `src/lib/algebra.js` | exact verification of finite groups, their axioms, and subgroups |
+| `src/lib/algebra.js` | exact verification of finite groups, rings and fields, axiom by axiom |
 | `src/lib/polynomial.js` | polynomial sign certificates and exact sign-chart routing |
 | `src/lib/rational-polynomial.js` | exact rational arithmetic, Sturm root isolation, sign charts |
 | `src/lib/quadratic-form.js` | exact positive-semidefiniteness certificates for multivariable quadratics |

@@ -94,7 +94,41 @@ check('a subset missing the identity',
 check('order divides order', [...Z4, 'H:=\\{0,2\\}',
   '\\operatorname{mod}(\\operatorname{card}(G),\\operatorname{card}(H))=0'], proved);
 
+console.log('== rings ==');
+const ring = (n) => [
+  `R:=\\{${Array.from({ length: n }, (_, i) => i).join(',')}\\}`,
+  `p(a,b):=\\operatorname{mod}(a+b,${n})`,
+  `t(a,b):=\\operatorname{mod}(ab,${n})`,
+];
+check('ℤ/4 is a ring', [...ring(4), '\\mathsf{Rng}(R,p,t,0)'], proved);
+check('ℤ/5 is a ring', [...ring(5), '\\mathsf{Rng}(R,p,t,0)'], proved);
+check('ℤ/6 is a ring', [...ring(6), '\\mathsf{Rng}(R,p,t,0)'], proved);
+check('distributivity alone', [...ring(4), '\\mathsf{Dst}(R,p,t)'], proved);
+check('multiplicative identity alone', [...ring(4), '\\mathsf{Uni}(R,t,1)'], proved);
+check('textual alias', [...ring(4), '\\operatorname{ring}(R,p,t,0)'], proved);
+
+check('a non-distributive pair',
+  ['R:=\\{0,1,2,3\\}', 'p(a,b):=\\operatorname{mod}(a+b,4)',
+    'g(a,b):=\\operatorname{mod}(a+2b,4)', '\\mathsf{Dst}(R,p,g)'], exactFalse);
+check('wrong additive identity', [...ring(4), '\\mathsf{Rng}(R,p,t,1)'], exactFalse);
+
+console.log('== fields ==');
+check('ℤ/2 is a field', [...ring(2), '\\mathsf{Fld}(R,p,t,0,1)'], proved);
+check('ℤ/3 is a field', [...ring(3), '\\mathsf{Fld}(R,p,t,0,1)'], proved);
+check('ℤ/5 is a field', [...ring(5), '\\mathsf{Fld}(R,p,t,0,1)'], proved);
+// The composite moduli are exactly where a field fails: 2 has no inverse mod 4.
+check('ℤ/4 is not a field', [...ring(4), '\\mathsf{Fld}(R,p,t,0,1)'], exactFalse);
+check('ℤ/6 is not a field', [...ring(6), '\\mathsf{Fld}(R,p,t,0,1)'], exactFalse);
+// The one-element ring satisfies every other axiom and is still not a field,
+// because 0 and 1 coincide.
+check('the trivial ring is not a field',
+  ['R:=\\{0\\}', 'p(a,b):=0', 't(a,b):=0', '\\mathsf{Fld}(R,p,t,0,0)'], exactFalse);
+
 console.log('== honest unknowns ==');
+check('ring on an infinite carrier',
+  ['p(a,b):=a+b', 't(a,b):=ab', '\\mathsf{Rng}(\\mathbb{Z},p,t,0)'], honestUnknown);
+check('ring with a missing operation',
+  ['R:=\\{0,1\\}', 'p(a,b):=a+b', '\\mathsf{Rng}(R,p,zz,0)'], honestUnknown);
 check('infinite carrier',
   ['n(a,b):=a+b', '\\mathsf{Grp}(\\mathbb{Z},n,0)'], honestUnknown);
 check('operation is not defined', ['G:=\\{0,1\\}', '\\mathsf{Grp}(G,zz,0)'], honestUnknown);

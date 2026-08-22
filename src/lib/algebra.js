@@ -24,6 +24,7 @@ import { materializeFiniteSet } from './sets.js';
 export const ALGEBRA_PREDICATES = new Set([
   'GroupStructure', 'GroupClosure', 'GroupAssociative',
   'GroupIdentity', 'GroupInverses', 'AbelianGroup', 'Subgroup',
+  'RingStructure', 'RingDistributive', 'RingUnity', 'FieldStructure',
 ]);
 
 /**
@@ -156,6 +157,59 @@ const commutative = ({ items, products }) => items.every((_, a) => items.every((
   products[a][b] === products[b][a]
 )));
 
+/** An abelian group, which is what a ring's addition has to be. */
+function isAbelianGroup(data, zeroExpr) {
+  return closed(data) && associative(data) === true && commutative(data)
+    && hasIdentity(data, zeroExpr) && hasInverses(data, zeroExpr);
+}
+
+/**
+ * Both distributive laws, checked through the operations.
+ *
+ * Left and right are checked separately rather than assuming commutativity —
+ * a ring whose multiplication does not commute still has to satisfy both, and
+ * checking only one would certify structures that are not rings.
+ */
+function distributive(items, add, multiply) {
+  for (const a of items) {
+    for (const b of items) {
+      for (const c of items) {
+        const sum = applyBinary(add, b, c);
+        if (sum === null) return null;
+        const left = applyBinary(multiply, a, sum);
+        const leftExpanded = (() => {
+          const first = applyBinary(multiply, a, b);
+          const second = applyBinary(multiply, a, c);
+          return first === null || second === null ? null : applyBinary(add, first, second);
+        })();
+        const right = applyBinary(multiply, sum, a);
+        const rightExpanded = (() => {
+          const first = applyBinary(multiply, b, a);
+          const second = applyBinary(multiply, c, a);
+          return first === null || second === null ? null : applyBinary(add, first, second);
+        })();
+        if (left === null || leftExpanded === null
+          || right === null || rightExpanded === null) return null;
+        if (valueKey(left) !== valueKey(leftExpanded)) return false;
+        if (valueKey(right) !== valueKey(rightExpanded)) return false;
+      }
+    }
+  }
+  return true;
+}
+
+/** Every element other than zero has a multiplicative inverse. */
+function invertibleAwayFromZero(data, zeroExpr, oneExpr) {
+  const zero = identityAt(data, zeroExpr);
+  const one = identityAt(data, oneExpr);
+  if (zero === null || one === null || zero === one) return false;
+  return data.items.every((_, a) => (
+    a === zero || data.items.some((__, b) => (
+      data.products[a][b] === one && data.products[b][a] === one
+    ))
+  ));
+}
+
 /**
  * Truth of one algebra predicate, or null when this prover cannot say.
  *
@@ -185,6 +239,39 @@ export function algebraTruth(ce, expr, definitions) {
     if (!inside) return false;
     return closed(part) && hasIdentity(part, identityExpr)
       && hasInverses(part, identityExpr);
+  }
+
+  // Two operations on one carrier: rings and fields.
+  if (op === 'RingDistributive' || op === 'RingStructure' || op === 'FieldStructure') {
+    const wanted = { RingDistributive: 3, RingStructure: 4, FieldStructure: 5 }[op];
+    if (expr.nops !== wanted) return null;
+    const [setExpr, addExpr, multiplyExpr, zeroExpr, oneExpr] = expr.ops;
+    const additive = structure(ce, setExpr, addExpr, definitions);
+    const multiplicative = structure(ce, setExpr, multiplyExpr, definitions);
+    if (!additive || !multiplicative) return null;
+
+    const laws = distributive(additive.items, additive.operation, multiplicative.operation);
+    if (laws === null) return null;
+    if (op === 'RingDistributive') return laws;
+
+    const associativity = associative(multiplicative);
+    if (associativity === null) return null;
+    const isRing = isAbelianGroup(additive, zeroExpr)
+      && closed(multiplicative) && associativity && laws;
+    if (op === 'RingStructure') return isRing;
+
+    // A field is a commutative ring with unity in which everything but zero
+    // is invertible — and in which zero and one are actually distinct, which
+    // is what rules out the one-element ring.
+    return isRing && commutative(multiplicative)
+      && hasIdentity(multiplicative, oneExpr)
+      && invertibleAwayFromZero(multiplicative, zeroExpr, oneExpr);
+  }
+
+  if (op === 'RingUnity') {
+    if (expr.nops !== 3) return null;
+    const data = structure(ce, expr.ops[0], expr.ops[1], definitions);
+    return data ? hasIdentity(data, expr.ops[2]) : null;
   }
 
   const arity = op === 'GroupClosure' || op === 'GroupAssociative' || op === 'AbelianGroup'

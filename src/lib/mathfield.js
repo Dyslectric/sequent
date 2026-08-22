@@ -21,6 +21,10 @@ export const INLINE_SHORTCUTS = {
   abelian: '\\mathsf{Abl}\\left(#?,#?\\right)',
   subgroup: '\\mathsf{Sbg}\\left(#?,#?,#?,#?\\right)',
   closure: '\\mathsf{Clo}\\left(#?,#?\\right)',
+  ring: '\\mathsf{Rng}\\left(#?,#?,#?,#?\\right)',
+  distributive: '\\mathsf{Dst}\\left(#?,#?,#?\\right)',
+  unity: '\\mathsf{Uni}\\left(#?,#?,#?\\right)',
+  field: '\\mathsf{Fld}\\left(#?,#?,#?,#?,#?\\right)',
   assoc: '\\mathsf{Asc}\\left(#?,#?\\right)',
   identity: '\\mathsf{Idn}\\left(#?,#?,#?\\right)',
   inverses: '\\mathsf{Inv}\\left(#?,#?,#?\\right)',
@@ -338,6 +342,20 @@ export const ALGEBRA_LAYOUT = {
       }),
       key('\\mathsf{Sbg}', {
         insert: '\\mathsf{Sbg}(#?,#?,#?,#?)', class: 'small', tooltip: 'is a subgroup',
+      }),
+    ],
+    [
+      key('\\mathsf{Rng}', {
+        insert: '\\mathsf{Rng}(#?,#?,#?,#?)', class: 'small', tooltip: 'is a ring',
+      }),
+      key('\\mathsf{Fld}', {
+        insert: '\\mathsf{Fld}(#?,#?,#?,#?,#?)', class: 'small', tooltip: 'is a field',
+      }),
+      key('\\mathsf{Dst}', {
+        insert: '\\mathsf{Dst}(#?,#?,#?)', class: 'small', tooltip: 'distributivity axiom',
+      }),
+      key('\\mathsf{Uni}', {
+        insert: '\\mathsf{Uni}(#?,#?,#?)', class: 'small', tooltip: 'multiplicative identity',
       }),
     ],
     [

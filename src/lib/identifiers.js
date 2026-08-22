@@ -88,6 +88,7 @@ const BUILTIN_FUNCTIONS = new Map(Object.entries({
   TopologyIntersectionAxiom: 'TopologyIntersectionAxiom', axintersections: 'TopologyIntersectionAxiom',
   MetricIntersectionWitness: 'MetricIntersectionWitness', meetw: 'MetricIntersectionWitness',
   SetCardinality: 'SetCardinality', cardinality: 'SetCardinality', card: 'SetCardinality',
+  CompactSpace: 'CompactSpace', compact: 'CompactSpace',
   Induction: 'Induction', induction: 'Induction', induct: 'Induction',
   InductionBase: 'InductionBase', indbase: 'InductionBase',
   InductionStep: 'InductionStep', indstep: 'InductionStep',
@@ -115,6 +116,7 @@ const STYLED_BUILTIN_FUNCTIONS = new Map([
   ['mathsf:Ax:\\bigcup', 'TopologyUnionAxiom'],
   ['mathsf:Ax:\\cap', 'TopologyIntersectionAxiom'],
   ['mathsf:Meet:', 'MetricIntersectionWitness'],
+  ['mathsf:Cpt:', 'CompactSpace'],
   // `Ind` is already the indiscrete topology, so induction spells it out.
   ['mathsf:Induct:', 'Induction'],
   ['mathsf:Base:', 'InductionBase'],

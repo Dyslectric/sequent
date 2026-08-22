@@ -20,7 +20,7 @@ npm install
 npm run dev
 ```
 
-`npm test` runs the evaluation-core tests (4,043 cases, no browser needed).
+`npm test` runs the evaluation-core tests (4,055 cases, no browser needed).
 
 `npm run fuzz` runs deterministic property fuzzing over domain-scoped chain
 layout, formatting round trips, incomplete editor input, and exact equality,
@@ -477,6 +477,30 @@ These predicates open a local, universally quantified proof obligation over
 arbitrary open sets or an arbitrary indexed family and discharge it using the
 constructor's exact theorem schema. They never sample. A mismatched carrier or
 an unsupported constructor remains undecided.
+
+#### Compactness
+
+`Cpt(τ, X)` decides compactness from the same kind of finite schema, because
+enumerating open covers is hopeless for any space worth asking about:
+
+```
+Cpt(τ, E)                       true    any topology on a finite carrier
+Cpt(Ind(ℝ), ℝ)                  true
+Cpt(Cof(ℝ), ℝ)                  true
+Cpt(Disc(ℝ), ℝ)                 false
+Cpt(Met(ℝ), ℝ)                  false
+Cpt(Sub(Met(ℝ), ℝ, closedball(0,1)), closedball(0,1))   true    Heine–Borel
+Cpt(Sub(Met(ℝ), ℝ, ball(0,1)),       ball(0,1))         false
+Cpt(Prod(Met(ℝ),ℝ,Met(ℝ),ℝ), ℝ×ℝ)                       false   two-factor Tychonoff
+```
+
+The false answers carry as much weight as the true ones: a predicate that only
+ever said "compact" would prove Heine–Borel by accident. Note also that *not
+known to be finite* is not *infinite* — `Cpt(Disc(S), S)` for a symbolic `S` is
+undecided rather than non-compact, because `S` may well be finite. Only a
+carrier known to be infinite earns a `false`.
+
+The keyboard renders this as `𝖢𝗉𝗍`; `compact` is the textual shortcut.
 
 `Γ ⊢ P` is accepted sequent notation for proving `P` from the assumptions in
 `Γ`; its scope is that line only. For example, after `τ := Disc(ℝ)`, the line

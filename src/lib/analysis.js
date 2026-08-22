@@ -5,6 +5,7 @@ import { materializeFiniteSet } from './sets.js';
 export const ANALYSIS_PREDICATES = new Set([
   'ContinuousAt', 'LimitAt',
   'Induction', 'InductionBase', 'InductionStep',
+  'CompactSpace',
   'Topology', 'OpenIn', 'ClosedIn', 'NeighborhoodOf',
   'MetricOpen', 'MetricClosed', 'ContinuousMap',
   'TopologyEmptyAxiom', 'TopologyCarrierAxiom',
@@ -434,6 +435,77 @@ function witnessFormula(ce, expr, definitions, makeWitness, realSymbols) {
   ]);
 }
 
+/** Standard sets known to be infinite, which is what rules out compactness. */
+const KNOWN_INFINITE = new Set([
+  'NonNegativeIntegers', 'PositiveIntegers', 'Integers',
+  'RationalNumbers', 'RealNumbers', 'ExtendedRealNumbers', 'ComplexNumbers',
+]);
+
+/**
+ * Compactness, from finite theorem schemas rather than from open covers.
+ *
+ * Enumerating covers is hopeless for any space worth asking about, so each
+ * constructor carries its own answer, exactly as the topology axioms do:
+ *
+ *   - a finite carrier is compact under any topology at all;
+ *   - the indiscrete and cofinite topologies are compact on any carrier;
+ *   - a discrete topology is compact only on a finite carrier, so on a carrier
+ *     known to be infinite it is not;
+ *   - ℝ under its metric is not compact;
+ *   - a product is compact exactly when both factors are;
+ *   - and a subspace of the real line is compact exactly when it is closed and
+ *     bounded, which is Heine–Borel and is where `closedball` and `ball` part
+ *     company.
+ *
+ * "Not known to be finite" is not the same as infinite: `Disc(S)` for a
+ * symbolic S is undecided rather than non-compact, because S may well be
+ * finite. Only a carrier that is *known* infinite earns a false.
+ */
+function compactTruth(ce, topologyExpr, carrierExpr, definitions, seen = new Set()) {
+  // Compactness is a property of a space, so it has to be one first.
+  if (topologyCertificateTruth(
+    ce, topologyExpr, carrierExpr, definitions, new Set(seen)
+  ) !== true) return null;
+
+  if (finiteSet(ce, carrierExpr, definitions)) return true;
+
+  const topology = resolveDefined(topologyExpr, definitions);
+  const carrier = resolveDefined(carrierExpr, definitions);
+  if (!topology || !carrier) return null;
+  const key = valueKey(topology);
+  if (key && seen.has(key)) return null;
+  if (key) seen.add(key);
+
+  if (topology.operator === 'IndiscreteTopology' || topology.operator === 'CofiniteTopology') {
+    return true;
+  }
+  if (topology.operator === 'DiscreteTopology' || topology.operator === 'PowerSet') {
+    return KNOWN_INFINITE.has(carrier.symbol) ? false : null;
+  }
+  if (topology.operator === 'MetricTopology') {
+    return KNOWN_INFINITE.has(carrier.symbol) ? false : null;
+  }
+  if (topology.operator === 'ProductTopology' && topology.nops === 4) {
+    const [leftTopology, leftCarrier, rightTopology, rightCarrier] = topology.ops;
+    const left = compactTruth(ce, leftTopology, leftCarrier, definitions, new Set(seen));
+    const right = compactTruth(ce, rightTopology, rightCarrier, definitions, new Set(seen));
+    if (left === false || right === false) return false;
+    return left === true && right === true ? true : null;
+  }
+  if (topology.operator === 'SubspaceTopology' && topology.nops === 3) {
+    const [parentTopology, , subset] = topology.ops;
+    const parent = resolveDefined(parentTopology, definitions);
+    if (parent?.operator !== 'MetricTopology') return null;
+    const region = resolveDefined(subset, definitions);
+    // Heine–Borel, in the two shapes the app can actually name: a closed ball
+    // is closed and bounded, an open ball is bounded and not closed.
+    if (region?.operator === 'ClosedBall') return true;
+    if (region?.operator === 'OpenBall') return false;
+    return KNOWN_INFINITE.has(region?.symbol) ? false : null;
+  }
+  return null;
+}
+
 /**
  * Induction, as two obligations rather than an appeal to a rule.
  *
@@ -474,6 +546,13 @@ function inductionObligations(ce, expr, definitions, makeWitness) {
 function lowerNode(ce, expr, definitions, makeWitness, realSymbols) {
   if (!expr) return { expr, unresolvedAnalysis: false };
   const op = expr.operator;
+
+  if (op === 'CompactSpace' && expr.nops === 2) {
+    const verdict = compactTruth(ce, expr.ops[0], expr.ops[1], definitions);
+    return verdict === null
+      ? { expr, unresolvedAnalysis: true, unsafeEvaluation: true }
+      : { expr: truth(ce, verdict), unresolvedAnalysis: false };
+  }
 
   if (op === 'Induction' || op === 'InductionBase' || op === 'InductionStep') {
     const obligations = inductionObligations(ce, expr, definitions, makeWitness);

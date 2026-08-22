@@ -16,6 +16,7 @@ export const INLINE_SHORTCUTS = {
   cart: '\\operatorname{CartesianProduct}\\left(#?,#?\\right)',
   ball: '\\operatorname{ball}\\left(#?,#?\\right)',
   closedball: '\\operatorname{closedball}\\left(#?,#?\\right)',
+  compact: '\\mathsf{Cpt}\\left(#?,#?\\right)',
   induct: '\\mathsf{Induct}\\left(#?,#?\\right)',
   indbase: '\\mathsf{Base}\\left(#?,#?\\right)',
   indstep: '\\mathsf{Step}\\left(#?,#?\\right)',

@@ -38,6 +38,49 @@ const honestUnknown = (result) => (
     ? null : 'expected an honest unknown'
 );
 
+console.log('== compactness ==');
+/**
+ * Compactness from finite theorem schemas rather than from open covers. Note
+ * how much of the value is in the false answers: a predicate that only ever
+ * says "compact" would prove Heine-Borel by accident.
+ */
+check('finite carrier is compact',
+  ['E:=\\{1,2\\}', '\\tau:=\\{\\varnothing,\\{1\\},E\\}', '\\mathsf{Cpt}(\\tau,E)'], proved);
+check('discrete on a finite carrier',
+  ['E:=\\{1,2\\}', '\\tau:=\\mathsf{Disc}(E)', '\\mathsf{Cpt}(\\tau,E)'], proved);
+check('indiscrete on ℝ is compact',
+  ['\\tau:=\\mathsf{Ind}(\\mathbb{R})', '\\mathsf{Cpt}(\\tau,\\mathbb{R})'], proved);
+check('cofinite on ℝ is compact',
+  ['\\tau:=\\mathsf{Cof}(\\mathbb{R})', '\\mathsf{Cpt}(\\tau,\\mathbb{R})'], proved);
+check('textual alias',
+  ['\\tau:=\\mathsf{Ind}(\\mathbb{R})',
+    '\\operatorname{compact}(\\tau,\\mathbb{R})'], proved);
+
+check('discrete on ℝ is not compact',
+  ['\\tau:=\\mathsf{Disc}(\\mathbb{R})', '\\mathsf{Cpt}(\\tau,\\mathbb{R})'], exactFalse);
+check('ℝ under its metric is not compact',
+  ['\\tau:=\\mathsf{Met}(\\mathbb{R})', '\\mathsf{Cpt}(\\tau,\\mathbb{R})'], exactFalse);
+
+// Heine-Borel, in the two shapes the app can name.
+check('closed ball is compact',
+  ['\\tau:=\\mathsf{Met}(\\mathbb{R})', 'K:=\\operatorname{closedball}(0,1)',
+    '\\sigma:=\\mathsf{Sub}(\\tau,\\mathbb{R},K)', '\\mathsf{Cpt}(\\sigma,K)'], proved);
+check('open ball is not compact',
+  ['\\tau:=\\mathsf{Met}(\\mathbb{R})', 'U:=\\operatorname{ball}(0,1)',
+    '\\sigma:=\\mathsf{Sub}(\\tau,\\mathbb{R},U)', '\\mathsf{Cpt}(\\sigma,U)'], exactFalse);
+
+// Two-factor Tychonoff, and its contrapositive.
+check('plane is not compact',
+  ['\\tau:=\\mathsf{Met}(\\mathbb{R})',
+    '\\rho:=\\mathsf{Prod}(\\tau,\\mathbb{R},\\tau,\\mathbb{R})',
+    '\\mathsf{Cpt}(\\rho,\\mathbb{R}\\times\\mathbb{R})'], exactFalse);
+
+// "Not known to be finite" is not "infinite": a symbolic carrier may well be
+// finite, so a discrete topology on one is undecided, never non-compact.
+check('symbolic carrier is undecided',
+  ['\\tau:=\\mathsf{Disc}(S)', '\\mathsf{Cpt}(\\tau,S)'], honestUnknown);
+check('not a topology at all', ['\\mathsf{Cpt}(W,\\mathbb{R})'], honestUnknown);
+
 console.log('== induction certificates ==');
 /**
  * `Induct(P, b)` is the pair of obligations, not an appeal to a rule: the base

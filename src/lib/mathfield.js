@@ -17,6 +17,14 @@ export const INLINE_SHORTCUTS = {
   ball: '\\operatorname{ball}\\left(#?,#?\\right)',
   closedball: '\\operatorname{closedball}\\left(#?,#?\\right)',
   compact: '\\mathsf{Cpt}\\left(#?,#?\\right)',
+  group: '\\mathsf{Grp}\\left(#?,#?,#?\\right)',
+  abelian: '\\mathsf{Abl}\\left(#?,#?\\right)',
+  subgroup: '\\mathsf{Sbg}\\left(#?,#?,#?,#?\\right)',
+  closure: '\\mathsf{Clo}\\left(#?,#?\\right)',
+  assoc: '\\mathsf{Asc}\\left(#?,#?\\right)',
+  identity: '\\mathsf{Idn}\\left(#?,#?,#?\\right)',
+  inverses: '\\mathsf{Inv}\\left(#?,#?,#?\\right)',
+  card: '\\operatorname{card}\\left(#?\\right)',
   induct: '\\mathsf{Induct}\\left(#?,#?\\right)',
   indbase: '\\mathsf{Base}\\left(#?,#?\\right)',
   indstep: '\\mathsf{Step}\\left(#?,#?\\right)',
@@ -316,9 +324,52 @@ export const TOPOLOGY_LAYOUT = {
   ],
 };
 
+/** Finite algebraic structures: the group axioms, each separately checkable. */
+export const ALGEBRA_LAYOUT = {
+  label: 'grp',
+  tooltip: 'Groups',
+  rows: [
+    [
+      key('\\mathsf{Grp}', {
+        insert: '\\mathsf{Grp}(#?,#?,#?)', class: 'small', tooltip: 'is a group',
+      }),
+      key('\\mathsf{Abl}', {
+        insert: '\\mathsf{Abl}(#?,#?)', class: 'small', tooltip: 'is abelian',
+      }),
+      key('\\mathsf{Sbg}', {
+        insert: '\\mathsf{Sbg}(#?,#?,#?,#?)', class: 'small', tooltip: 'is a subgroup',
+      }),
+    ],
+    [
+      key('\\mathsf{Clo}', {
+        insert: '\\mathsf{Clo}(#?,#?)', class: 'small', tooltip: 'closure axiom',
+      }),
+      key('\\mathsf{Asc}', {
+        insert: '\\mathsf{Asc}(#?,#?)', class: 'small', tooltip: 'associativity axiom',
+      }),
+      key('\\mathsf{Idn}', {
+        insert: '\\mathsf{Idn}(#?,#?,#?)', class: 'small', tooltip: 'identity axiom',
+      }),
+      key('\\mathsf{Inv}', {
+        insert: '\\mathsf{Inv}(#?,#?,#?)', class: 'small', tooltip: 'inverses axiom',
+      }),
+    ],
+    [
+      fn('card', '\\operatorname{card}(#?)', 'size of a finite set'),
+      fn('mod', '\\operatorname{mod}(#?,#?)', 'modulo'),
+      key('('), key(')'), key(','),
+      { label: '[left]', tooltip: 'move left' },
+      { label: '[right]', tooltip: 'move right' },
+      { label: '[backspace]', tooltip: 'backspace', class: 'action hide-shift calc-backspace' },
+      { label: '[return]', tooltip: 'new line' },
+    ],
+  ],
+};
+
 /** The custom calculator and set layers subsume MathLive's stock symbol tabs. */
 export const KEYBOARD_LAYOUTS = [
-  CALCULATOR_LAYOUT, SET_LAYOUT, ANALYSIS_LAYOUT, TOPOLOGY_LAYOUT, 'alphabetic', 'greek',
+  CALCULATOR_LAYOUT, SET_LAYOUT, ANALYSIS_LAYOUT, TOPOLOGY_LAYOUT, ALGEBRA_LAYOUT,
+  'alphabetic', 'greek',
 ];
 
 /**

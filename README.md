@@ -20,7 +20,7 @@ npm install
 npm run dev
 ```
 
-`npm test` runs the evaluation-core tests (4,055 cases, no browser needed).
+`npm test` runs the evaluation-core tests (4,082 cases, no browser needed).
 
 `npm run fuzz` runs deterministic property fuzzing over domain-scoped chain
 layout, formatting round trips, incomplete editor input, and exact equality,
@@ -397,6 +397,53 @@ as "true so far" would launder evidence into a proof.
 The keyboard offers `𝖨𝗇𝖽𝗎𝖼𝗍`, `𝖡𝖺𝗌𝖾`, and `𝖲𝗍𝖾𝗉`; `induct`, `indbase`, and
 `indstep` are the textual shortcuts. `𝖨𝗇𝖽` remains the indiscrete topology.
 
+### Groups
+
+A finite algebraic structure has finitely many obligations, so they are checked
+rather than argued. The operation is an ordinary two-argument definition, which
+means the sheet needs no separate notion of "operation":
+
+```
+G := {0, 1, 2, 3}
+m(a, b) := mod(a + b, 4)
+Grp(G, m, 0)                   true, proved
+Abl(G, m)                      true, proved
+```
+
+Each axiom is separately nameable, so a group is walked one obligation at a
+time the way a topology is walked through its four:
+
+```
+Clo(G, m)                      closure
+Asc(G, m)                      associativity
+Idn(G, m, 0)                   identity
+Inv(G, m, 0)                   inverses
+```
+
+Subgroups are certified the same way, and Lagrange's theorem can then be
+*witnessed* on the instance by counting:
+
+```
+H := {0, 2}
+Sbg(H, G, m, 0)                true, proved
+mod(card(G), card(H)) = 0      true, proved
+```
+
+That last line is worth being precise about. It is not a proof of Lagrange's
+theorem, which quantifies over all finite groups and is not something a
+carrier-by-carrier check can establish. It is a confirmation that Lagrange
+holds here, on this group, which is a smaller and honest claim.
+
+Refusals are as informative as the certificates. Unbounded addition on
+`{0,1,2,3}` fails closure; subtraction fails associativity; multiplication mod
+4 on `{1,2,3}` leaves 2 without an inverse; `{0,1}` is not a subgroup of ℤ/4.
+An infinite carrier, an undefined operation, or an operation of the wrong arity
+is `undecided` — never sampled. Carriers above sixteen elements are refused
+rather than checked, associativity being the constraint at n³ obligations.
+
+The keyboard's `grp` layer carries all of these; `group`, `abelian`, `subgroup`,
+`closure`, `assoc`, `identity`, and `inverses` are the textual shortcuts.
+
 ### Analysis and topology
 
 The `ε–δ` keyboard layer supplies real metric balls, explicit continuity and
@@ -665,7 +712,8 @@ Sampling is deterministic, so the same sheet always gives the same verdict.
 | `src/lib/decide.js` | the symbolic + sampling decision procedure |
 | `src/lib/complex-proof.js` | exact real-part, conjugation, exponential, and cosine rewrites |
 | `src/lib/sets.js` | set values, set-builders, extensional lowering, finite set decisions |
-| `src/lib/analysis.js` | epsilon-delta and induction certificates, metric balls, finite and intensional topology proofs |
+| `src/lib/analysis.js` | certificate dispatch: epsilon-delta, induction, compactness, metric balls, finite and intensional topology proofs |
+| `src/lib/algebra.js` | exact verification of finite groups, their axioms, and subgroups |
 | `src/lib/polynomial.js` | polynomial sign certificates and exact sign-chart routing |
 | `src/lib/rational-polynomial.js` | exact rational arithmetic, Sturm root isolation, sign charts |
 | `src/lib/quadratic-form.js` | exact positive-semidefiniteness certificates for multivariable quadratics |

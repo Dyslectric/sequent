@@ -1,6 +1,7 @@
 /** Exact proof certificates for elementary real analysis and finite topology. */
 
 import { materializeFiniteSet } from './sets.js';
+import { ALGEBRA_PREDICATES, algebraTruth } from './algebra.js';
 
 export const ANALYSIS_PREDICATES = new Set([
   'ContinuousAt', 'LimitAt',
@@ -11,6 +12,10 @@ export const ANALYSIS_PREDICATES = new Set([
   'TopologyEmptyAxiom', 'TopologyCarrierAxiom',
   'TopologyUnionAxiom', 'TopologyIntersectionAxiom',
   'MetricIntersectionWitness',
+  // Finite algebraic structures ride the same certificate pathway: exact or
+  // undecided, never sampled. The checking lives in `algebra.js`; this module
+  // is where every certificate is dispatched.
+  ...ALGEBRA_PREDICATES,
 ]);
 
 const LOGICAL = new Set(['And', 'Or', 'Not', 'Implies', 'Equivalent']);
@@ -546,6 +551,13 @@ function inductionObligations(ce, expr, definitions, makeWitness) {
 function lowerNode(ce, expr, definitions, makeWitness, realSymbols) {
   if (!expr) return { expr, unresolvedAnalysis: false };
   const op = expr.operator;
+
+  if (ALGEBRA_PREDICATES.has(op)) {
+    const verdict = algebraTruth(ce, expr, definitions);
+    return verdict === null
+      ? { expr, unresolvedAnalysis: true, unsafeEvaluation: true }
+      : { expr: truth(ce, verdict), unresolvedAnalysis: false };
+  }
 
   if (op === 'CompactSpace' && expr.nops === 2) {
     const verdict = compactTruth(ce, expr.ops[0], expr.ops[1], definitions);

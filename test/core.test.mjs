@@ -9,6 +9,7 @@ import {
   getTopLevelChainCheckpoints,
 } from '../src/lib/top-level.js';
 import {
+  ALGEBRA_LAYOUT,
   ANALYSIS_LAYOUT,
   CALCULATOR_LAYOUT,
   INLINE_SHORTCUTS,
@@ -305,7 +306,8 @@ if (KEYBOARD_LAYOUTS[0] === CALCULATOR_LAYOUT
   && KEYBOARD_LAYOUTS[1] === SET_LAYOUT
   && KEYBOARD_LAYOUTS[2] === ANALYSIS_LAYOUT
   && KEYBOARD_LAYOUTS[3] === TOPOLOGY_LAYOUT
-  && JSON.stringify(KEYBOARD_LAYOUTS.slice(4)) === JSON.stringify(['alphabetic', 'greek'])) passed++;
+  && KEYBOARD_LAYOUTS[4] === ALGEBRA_LAYOUT
+  && JSON.stringify(KEYBOARD_LAYOUTS.slice(5)) === JSON.stringify(['alphabetic', 'greek'])) passed++;
 else failures.push('redundant numeric and symbols keyboard tabs should be removed');
 const setKeys = SET_LAYOUT.rows.flat().map((entry) => entry.latex ?? entry.insert ?? entry.label);
 if (['\\in', '\\notin', '\\subseteq', '\\cup', '\\cap', '\\setminus', '\\varnothing', '\\times',

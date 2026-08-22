@@ -1,13 +1,14 @@
 {
   "name": "sequent",
   "private": true,
-  "version": "0.2.0",
+  "version": "0.3.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
+    "fuzz": "node scripts/fuzz.mjs",
     "preview": "vite preview",
-    "test": "node test/core.test.mjs && node test/multivariable-polynomial.test.mjs && node test/set-theory.test.mjs",
+    "test": "node test/core.test.mjs && node test/multivariable-polynomial.test.mjs && node test/set-theory.test.mjs && node test/analysis-topology.test.mjs",
     "tauri": "tauri",
     "desktop": "tauri dev",
     "desktop:build": "tauri build",

@@ -61,7 +61,67 @@ const BUILTIN_FUNCTIONS = new Map(Object.entries({
   sin: 'sin', cos: 'cos', tan: 'tan', sec: 'sec', csc: 'csc', cot: 'cot',
   arcsin: 'arcsin', arccos: 'arccos', arctan: 'arctan',
   sinh: 'sinh', cosh: 'cosh', tanh: 'tanh',
+  PowerSet: 'PowerSet', powerset: 'PowerSet',
+  CartesianProduct: 'CartesianProduct', cartesian: 'CartesianProduct', cart: 'CartesianProduct',
+  OpenBall: 'OpenBall', ball: 'OpenBall',
+  ClosedBall: 'ClosedBall', closedball: 'ClosedBall',
+  ContinuousAt: 'ContinuousAt', continuous: 'ContinuousAt', cont: 'ContinuousAt',
+  LimitAt: 'LimitAt', limitat: 'LimitAt', limitw: 'LimitAt',
+  Topology: 'Topology', topology: 'Topology',
+  OpenIn: 'OpenIn', openin: 'OpenIn',
+  ClosedIn: 'ClosedIn', closedin: 'ClosedIn',
+  NeighborhoodOf: 'NeighborhoodOf', neighborhood: 'NeighborhoodOf', nbrhd: 'NeighborhoodOf',
+  MetricOpen: 'MetricOpen', metricopen: 'MetricOpen',
+  MetricClosed: 'MetricClosed', metricclosed: 'MetricClosed',
+  ContinuousMap: 'ContinuousMap', continuousmap: 'ContinuousMap',
+  DiscreteTopology: 'DiscreteTopology', discrete: 'DiscreteTopology', disc: 'DiscreteTopology',
+  IndiscreteTopology: 'IndiscreteTopology', indiscrete: 'IndiscreteTopology', indisc: 'IndiscreteTopology',
+  CofiniteTopology: 'CofiniteTopology', cofinite: 'CofiniteTopology', cof: 'CofiniteTopology',
+  MetricTopology: 'MetricTopology', metrictopology: 'MetricTopology', metrictop: 'MetricTopology',
+  SubspaceTopology: 'SubspaceTopology', subspace: 'SubspaceTopology', subtop: 'SubspaceTopology',
+  ProductTopology: 'ProductTopology', producttopology: 'ProductTopology', prodtop: 'ProductTopology',
+  IndexedUnion: 'IndexedUnion', indexedunion: 'IndexedUnion', iunion: 'IndexedUnion',
+  IndexedIntersection: 'IndexedIntersection', indexedintersection: 'IndexedIntersection', iintersection: 'IndexedIntersection',
+  TopologyEmptyAxiom: 'TopologyEmptyAxiom', axempty: 'TopologyEmptyAxiom',
+  TopologyCarrierAxiom: 'TopologyCarrierAxiom', axcarrier: 'TopologyCarrierAxiom',
+  TopologyUnionAxiom: 'TopologyUnionAxiom', axunions: 'TopologyUnionAxiom',
+  TopologyIntersectionAxiom: 'TopologyIntersectionAxiom', axintersections: 'TopologyIntersectionAxiom',
+  MetricIntersectionWitness: 'MetricIntersectionWitness', meetw: 'MetricIntersectionWitness',
 }));
+
+/**
+ * Compact, presentation-first spellings used by the topology keyboard.
+ *
+ * These are deliberately recognized only when the styled letter is applied as
+ * a function. A standalone `\mathcal{O}` or `\mathcal{N}` remains an ordinary
+ * user identifier, so conventional names for an open set or a neighborhood
+ * system are still available.
+ */
+const STYLED_BUILTIN_FUNCTIONS = new Map([
+  ['mathsf:Top:', 'Topology'],
+  ['mathsf:Cts:', 'ContinuousMap'],
+  ['mathsf:Disc:', 'DiscreteTopology'],
+  ['mathsf:Ind:', 'IndiscreteTopology'],
+  ['mathsf:Cof:', 'CofiniteTopology'],
+  ['mathsf:Met:', 'MetricTopology'],
+  ['mathsf:Sub:', 'SubspaceTopology'],
+  ['mathsf:Prod:', 'ProductTopology'],
+  ['mathsf:Ax:\\varnothing', 'TopologyEmptyAxiom'],
+  ['mathsf:Ax:X', 'TopologyCarrierAxiom'],
+  ['mathsf:Ax:\\bigcup', 'TopologyUnionAxiom'],
+  ['mathsf:Ax:\\cap', 'TopologyIntersectionAxiom'],
+  ['mathsf:Meet:', 'MetricIntersectionWitness'],
+  ['mathcal:O:', 'OpenIn'],
+  ['mathscr:O:', 'OpenIn'],
+  ['mathcal:C:', 'ClosedIn'],
+  ['mathscr:C:', 'ClosedIn'],
+  ['mathcal:N:', 'NeighborhoodOf'],
+  ['mathscr:N:', 'NeighborhoodOf'],
+  ['mathcal:O:\\mathbb{R}', 'MetricOpen'],
+  ['mathscr:O:\\mathbb{R}', 'MetricOpen'],
+  ['mathcal:C:\\mathbb{R}', 'MetricClosed'],
+  ['mathscr:C:\\mathbb{R}', 'MetricClosed'],
+]);
 
 const isLetter = (c) => c !== undefined && /[A-Za-z]/.test(c);
 
@@ -249,6 +309,10 @@ function normalizeOperators(latex) {
     .replace(/\\coloneqq|\\Coloneqq|\\Coloneq|\\coloneq/g, '\\coloneq')
     .replace(/:\s*=/g, '\\coloneq ')
     .replace(/\\(?:Longrightarrow|Rightarrow|implies)\b/g, '\\implies ')
+    // A sequent with explicit assumptions is checked as the corresponding
+    // implication. This gives `Gamma \\vdash P` the app's existing universal
+    // validity semantics without treating assumptions as persistent facts.
+    .replace(/\\vdash\b/g, '\\implies ')
     .replace(/\\(?:Longleftarrow|Leftarrow|impliedby)\b/g, '\\impliedby ')
     // `\equiv` parses as a chainable relation, which is not what it means
     // between two statements; treat it as the biconditional throughout.
@@ -262,6 +326,14 @@ function normalizeOperators(latex) {
     .replace(/\\mathrm\s*\{\s*Im\s*\}/g, '\\operatorname{Imaginary}')
     .replace(/\\Re\b/g, '\\operatorname{Real}')
     .replace(/\\Im\b/g, '\\operatorname{Imaginary}')
+    // Indexed families use their conventional large operators in the editor;
+    // the evaluator receives an explicit two-argument head.
+    .replace(/\\mathop\s*\{\s*\\bigcup\s*\}/g, '\\operatorname{IndexedUnion}')
+    .replace(/\\mathop\s*\{\s*\\bigcap\s*\}/g, '\\operatorname{IndexedIntersection}')
+    // `𝒫(A)` is the conventional compact notation; Compute Engine exposes
+    // the operation under its word-form `PowerSet` builtin.
+    .replace(/\\(?:mathcal|mathscr)\s*\{\s*P\s*\}/g, '\\operatorname{PowerSet}')
+    .replace(/\\wp\b/g, '\\operatorname{PowerSet}')
     .replace(/\\(?:left|right|middle)\s*\./g, '')
     .replace(/\\displaystyle\b|\\limits\b|\\!/g, '');
 }
@@ -273,6 +345,34 @@ function opensCall(src, i) {
   return src[j] === '(';
 }
 
+/** Locate where an implicit final argument belongs in a parenthesized call. */
+function callArgumentEndIndex(src, i) {
+  let open = skipSpace(src, i);
+  if (src.startsWith('\\left', open)) open = skipSpace(src, open + 5);
+  if (src[open] !== '(') return -1;
+
+  let depth = 0;
+  let braceDepth = 0;
+  for (let j = open; j < src.length; j++) {
+    const c = src[j];
+    if (c === '\\') {
+      const command = readCommand(src, j);
+      j = command.end - 1;
+      continue;
+    }
+    if (c === '{') braceDepth++;
+    else if (c === '}') braceDepth--;
+    else if (braceDepth === 0 && c === '(') depth++;
+    else if (braceDepth === 0 && c === ')' && --depth === 0) {
+      // With sized delimiters, the argument must precede `\\right`, not merely
+      // the literal closing parenthesis that follows it.
+      const right = /\\right\s*$/.exec(src.slice(open, j));
+      return right ? open + right.index : j;
+    }
+  }
+  return -1;
+}
+
 /**
  * Rewrite user LaTeX into something Compute Engine parses unambiguously.
  * Returns the rewritten LaTeX plus the identifiers it mentions.
@@ -280,14 +380,49 @@ function opensCall(src, i) {
 export function sanitize(rawLatex, registry) {
   const src = normalizeOperators(rawLatex);
   const used = new Map();
+  const implicitArguments = new Map();
   let out = '';
   let i = 0;
 
   while (i < src.length) {
+    // Unary O_R(U) and C_R(F) are presentation shorthands. Compute Engine
+    // needs the explicit second argument to distinguish a unary unknown
+    // function from multiplication, so add the real domain at parse time.
+    if (implicitArguments.has(i)) out += implicitArguments.get(i);
     const c = src[i];
 
     if (c === '\\') {
       const cmd = readCommand(src, i);
+
+      // The topology layer uses compact mathematical symbols instead of long
+      // `operatorname` words: Top, O, C, N, and Cts. Recognize those styled
+      // symbols only in call position and lower them to the same internal
+      // predicates as the backwards-compatible textual aliases.
+      if (['mathsf', 'mathcal', 'mathscr'].includes(cmd.name)) {
+        const j = skipSpace(src, cmd.end);
+        if (src[j] === '{') {
+          const { content, end } = readBalanced(src, j);
+          const sub = scanSubscript(src, end);
+          const after = sub ? sub.end : end;
+          const subscript = sub?.raw.replace(/\s+/g, '') ?? '';
+          const builtin = STYLED_BUILTIN_FUNCTIONS.get(
+            `${cmd.name}:${content.trim()}:${subscript}`
+          );
+          if (builtin && opensCall(src, after)) {
+            out += `\\operatorname{${builtin}}`;
+            const implicit = (builtin === 'MetricOpen' || builtin === 'MetricClosed')
+              ? ',\\mathbb{R}'
+              : ['DiscreteTopology', 'IndiscreteTopology', 'CofiniteTopology', 'MetricTopology']
+                  .includes(builtin) ? ',\\varnothing' : null;
+            if (implicit) {
+              const close = callArgumentEndIndex(src, after);
+              if (close >= 0) implicitArguments.set(close, implicit);
+            }
+            i = after;
+            continue;
+          }
+        }
+      }
 
       // Keep the standard number sets intact. Without this special case the
       // identifier scanner sees the `R` inside `\\mathbb{R}` as a user name and

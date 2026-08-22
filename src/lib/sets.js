@@ -18,7 +18,10 @@ export const QUANTIFIERS = new Set(['ForAll', 'Exists']);
 
 const SET_OPERATORS = new Set([
   'Set', 'Union', 'Intersection', 'SetMinus', 'SymmetricDifference',
-  'PowerSet', 'CartesianProduct',
+  'PowerSet', 'CartesianProduct', 'OpenBall', 'ClosedBall',
+  'IndexedUnion', 'IndexedIntersection',
+  'DiscreteTopology', 'IndiscreteTopology', 'CofiniteTopology', 'MetricTopology',
+  'SubspaceTopology', 'ProductTopology',
 ]);
 
 const STANDARD_SETS = new Set([
@@ -36,6 +39,8 @@ const NUMBER_SET_RANK = new Map([
 ]);
 
 const LOGICAL = new Set(['And', 'Or', 'Not', 'Implies', 'Equivalent']);
+const MAX_POWER_SET_BASE_SIZE = 8;
+const MAX_CARTESIAN_PRODUCT_SIZE = 256;
 
 function setType(expr) {
   try {
@@ -74,6 +79,55 @@ export function isSetExpression(expr, definitions = new Map(), seen = new Set())
     return true;
   }
   return SET_OPERATORS.has(expr.operator) || setType(expr);
+}
+
+function multiplyHasKnownSetFactor(expr, definitions) {
+  return expr?.operator === 'Multiply'
+    && expr.ops.some((operand) => isSetExpression(operand, definitions));
+}
+
+/**
+ * Compute Engine parses `A \times B` as numeric multiplication. Reinterpret it
+ * only when its operands are already known sets or when the surrounding syntax
+ * requires a set, preserving ordinary arithmetic multiplication everywhere
+ * else.
+ */
+export function reinterpretCartesianProducts(ce, expr, definitions, expectSet = false) {
+  if (!expr?.ops?.length) return expr;
+  const op = expr.operator;
+  let expectations = expr.ops.map(() => false);
+
+  if (op === 'Element' || op === 'NotElement') {
+    expectations[1] = true;
+  } else if (SET_RELATIONS.has(op)) {
+    expectations = expectations.map(() => true);
+  } else if (SET_OPERATORS.has(op) && op !== 'Set') {
+    expectations = expectations.map(() => true);
+  } else if ((op === 'Equal' || op === 'IdenticallyEqual') && expr.ops.some(
+    (operand) => isSetExpression(operand, definitions)
+      || multiplyHasKnownSetFactor(operand, definitions)
+  )) {
+    expectations = expectations.map(() => true);
+  }
+
+  const operands = expr.ops.map((operand, index) => reinterpretCartesianProducts(
+    ce, operand, definitions, expectations[index]
+  ));
+
+  if (op === 'Multiply') {
+    const allSetFactors = operands.every((operand) => (
+      isSetExpression(operand, definitions) || (expectSet && Boolean(operand?.symbol))
+    ));
+    if (allSetFactors && (expectSet || operands.some(
+      (operand) => isSetExpression(operand, definitions)
+    ))) {
+      return ce.box(['CartesianProduct', ...operands]);
+    }
+  }
+
+  return operands.some((operand, index) => operand !== expr.ops[index])
+    ? ce.box([op, ...operands])
+    : expr;
 }
 
 /** Metadata stored alongside a set-valued constant definition. */
@@ -122,6 +176,23 @@ function resolveDefinedSet(expr, definitions, seen) {
   return definition.valueExpr;
 }
 
+function unaryFunctionDefinition(expr, definitions) {
+  if (!expr?.symbol) return null;
+  const definition = definitions.get(expr.symbol);
+  return definition?.kind === 'function' && definition.arity === 1
+    && definition.bodyExpr && definition.paramIds?.length === 1
+    ? definition
+    : null;
+}
+
+function applyUnaryFunction(definition, argument) {
+  try {
+    return definition.bodyExpr.subs({ [definition.paramIds[0]]: argument });
+  } catch {
+    return null;
+  }
+}
+
 function standardSubset(left, right) {
   if (left?.symbol === 'EmptySet') return true;
   if (left?.symbol === right?.symbol && STANDARD_SETS.has(left.symbol)) return true;
@@ -131,9 +202,96 @@ function standardSubset(left, right) {
   return a <= b;
 }
 
-function concreteFiniteSet(expr, definitions) {
-  const resolved = resolveDefinedSet(expr, definitions, new Set());
+/**
+ * Materialize a finite set value, including nested power sets. The explicit
+ * bound prevents a harmless-looking value line from trying to render millions
+ * of subsets; proposition lowering below does not need enumeration.
+ */
+export function materializeFiniteSet(ce, expr, definitions, seen = new Set()) {
+  const resolved = resolveDefinedSet(expr, definitions, seen);
   if (!resolved || setBuilderParts(resolved)) return null;
+
+  if (resolved.symbol === 'EmptySet') return resolved;
+
+  if (resolved.operator === 'PowerSet' && resolved.nops === 1) {
+    const base = materializeFiniteSet(ce, resolved.ops[0], definitions, new Set(seen));
+    if (!base) return null;
+    const items = base.symbol === 'EmptySet' ? [] : base.ops;
+    if (items.length > MAX_POWER_SET_BASE_SIZE) return null;
+
+    const subsets = [];
+    for (let mask = 0; mask < 2 ** items.length; mask++) {
+      const subset = items.filter((_, bit) => mask & (1 << bit));
+      subsets.push(subset.length ? ce.box(['Set', ...subset]) : ce.box('EmptySet'));
+    }
+    try { return ce.box(['Set', ...subsets]).evaluate(); } catch { return null; }
+  }
+
+  if ((resolved.operator === 'IndexedUnion' || resolved.operator === 'IndexedIntersection')
+    && resolved.nops === 2) {
+    const definition = unaryFunctionDefinition(resolved.ops[0], definitions);
+    const indices = materializeFiniteSet(
+      ce, resolved.ops[1], definitions, new Set(seen)
+    );
+    if (!definition || !indices) return null;
+    const indexItems = indices.symbol === 'EmptySet' ? [] : indices.ops;
+    if (indexItems.length === 0) {
+      return resolved.operator === 'IndexedUnion' ? ce.box('EmptySet') : null;
+    }
+    const family = indexItems.map((index) => {
+      const member = applyUnaryFunction(definition, index);
+      return member
+        ? materializeFiniteSet(ce, member, definitions, new Set(seen))
+        : null;
+    });
+    if (family.some((member) => !member)) return null;
+    if (family.length === 1) return family[0];
+    try {
+      const value = ce.box([
+        resolved.operator === 'IndexedUnion' ? 'Union' : 'Intersection', ...family,
+      ]).evaluate();
+      return value.operator === 'Set' || value.symbol === 'EmptySet' ? value : null;
+    } catch {
+      return null;
+    }
+  }
+
+  if (resolved.operator === 'CartesianProduct' && resolved.nops >= 2) {
+    const factors = resolved.ops.map((operand) => (
+      materializeFiniteSet(ce, operand, definitions, new Set(seen))
+    ));
+    if (factors.some((factor) => !factor)) return null;
+    const itemLists = factors.map((factor) => (
+      factor.symbol === 'EmptySet' ? [] : factor.ops
+    ));
+    const size = itemLists.reduce((total, items) => total * items.length, 1);
+    if (size > MAX_CARTESIAN_PRODUCT_SIZE) return null;
+    if (size === 0) return ce.box('EmptySet');
+
+    let tuples = [[]];
+    for (const items of itemLists) {
+      tuples = tuples.flatMap((tuple) => items.map((item) => [...tuple, item]));
+    }
+    try {
+      return ce.box(['Set', ...tuples.map((tuple) => ce.box(['Tuple', ...tuple]))]).evaluate();
+    } catch {
+      return null;
+    }
+  }
+
+  if (['Union', 'Intersection', 'SetMinus', 'SymmetricDifference'].includes(resolved.operator)) {
+    const operands = resolved.ops.map((operand) => (
+      materializeFiniteSet(ce, operand, definitions, new Set(seen))
+    ));
+    if (operands.some((operand) => !operand)) return null;
+    try {
+      const value = ce.box([resolved.operator, ...operands]).evaluate();
+      return value.operator === 'Set' || value.symbol === 'EmptySet' ? value : null;
+    } catch {
+      return null;
+    }
+  }
+
   let value = resolved;
   try { value = resolved.evaluate(); } catch { return null; }
   if (value.unknowns.length > 0 || setBuilderParts(value)) return null;
@@ -143,8 +301,8 @@ function concreteFiniteSet(expr, definitions) {
 function concreteSetRelationTruth(ce, expr, definitions) {
   if (!SET_RELATIONS.has(expr?.operator) || expr.nops !== 2) return null;
   const left = expr.operator === 'Element' || expr.operator === 'NotElement'
-    ? expr.ops[0] : concreteFiniteSet(expr.ops[0], definitions);
-  const right = concreteFiniteSet(expr.ops[1], definitions);
+    ? expr.ops[0] : materializeFiniteSet(ce, expr.ops[0], definitions);
+  const right = materializeFiniteSet(ce, expr.ops[1], definitions);
   if (!left || !right) return null;
   try {
     const evaluated = ce.box([expr.operator, left, right]).evaluate();
@@ -155,7 +313,9 @@ function concreteSetRelationTruth(ce, expr, definitions) {
 }
 
 /** Build the proposition `element \in set`, expanding supported set values. */
-function membership(ce, element, originalSet, definitions, seen = new Set()) {
+function membership(
+  ce, element, originalSet, definitions, seen = new Set(), realSymbols = new Set(), makeWitness
+) {
   const setExpr = resolveDefinedSet(originalSet, definitions, seen);
   const builder = setBuilderParts(setExpr);
   if (builder) {
@@ -166,9 +326,13 @@ function membership(ce, element, originalSet, definitions, seen = new Set()) {
     } catch {
       return { expr: ce.box(['Element', element, originalSet]), unresolvedSets: true };
     }
-    const loweredPredicate = lowerNode(ce, predicate, definitions, seen);
+    const loweredPredicate = lowerNode(
+      ce, predicate, definitions, seen, makeWitness, realSymbols
+    );
     if (!builder.domain) return loweredPredicate;
-    const domain = membership(ce, element, builder.domain, definitions, seen);
+    const domain = membership(
+      ce, element, builder.domain, definitions, seen, realSymbols, makeWitness
+    );
     return {
       expr: connective(ce, 'And', [domain.expr, loweredPredicate.expr]),
       unresolvedSets: domain.unresolvedSets || loweredPredicate.unresolvedSets,
@@ -176,6 +340,110 @@ function membership(ce, element, originalSet, definitions, seen = new Set()) {
   }
 
   if (setExpr?.symbol === 'EmptySet') return { expr: truth(ce, false), unresolvedSets: false };
+
+  // A set is an element of the power set exactly when it is a subset of the
+  // base. This is exact for finite, symbolic, builder, and standard-set bases.
+  if (setExpr?.operator === 'PowerSet' && setExpr.nops === 1) {
+    return lowerNode(
+      ce,
+      ce.box(['SubsetEqual', element, setExpr.ops[0]]),
+      definitions,
+      new Set(seen),
+      makeWitness,
+      realSymbols,
+    );
+  }
+
+  if (setExpr?.operator === 'CartesianProduct' && setExpr.nops >= 2) {
+    if (setExpr.ops.some((factor) => factor?.symbol === 'EmptySet')) {
+      return { expr: truth(ce, false), unresolvedSets: false };
+    }
+
+    let components;
+    let tupleGuard = null;
+    if (element?.operator === 'Tuple') {
+      if (element.nops !== setExpr.nops) {
+        return { expr: truth(ce, false), unresolvedSets: false };
+      }
+      components = element.ops;
+    } else if ((element?.unknowns?.length ?? 0) === 0) {
+      return { expr: truth(ce, false), unresolvedSets: false };
+    } else {
+      tupleGuard = ce.box(['TupleOfArity', element, setExpr.nops]);
+      components = setExpr.ops.map((_, index) => (
+        ce.box(['TupleComponent', element, index + 1])
+      ));
+    }
+
+    const checks = setExpr.ops.map((factor, index) => membership(
+      ce, components[index], factor, definitions, new Set(seen), realSymbols, makeWitness
+    ));
+    return {
+      expr: connective(ce, 'And', [
+        ...(tupleGuard ? [tupleGuard] : []),
+        ...checks.map((check) => check.expr),
+      ]),
+      unresolvedSets: Boolean(tupleGuard) || checks.some((check) => check.unresolvedSets),
+    };
+  }
+
+  if ((setExpr?.operator === 'IndexedUnion' || setExpr?.operator === 'IndexedIntersection')
+    && setExpr.nops === 2) {
+    const concrete = materializeFiniteSet(ce, setExpr, definitions, new Set(seen));
+    if (concrete) {
+      return membership(
+        ce, element, concrete, definitions, new Set(seen), realSymbols, makeWitness
+      );
+    }
+
+    const definition = unaryFunctionDefinition(setExpr.ops[0], definitions);
+    if (!definition) {
+      return { expr: ce.box(['Element', element, originalSet]), unresolvedSets: true };
+    }
+    const index = freshWitness(ce, makeWitness);
+    const memberSet = applyUnaryFunction(definition, index);
+    if (!memberSet) {
+      return { expr: ce.box(['Element', element, originalSet]), unresolvedSets: true };
+    }
+    const inDomain = membership(
+      ce, index, setExpr.ops[1], definitions, new Set(seen), realSymbols, makeWitness
+    );
+    const inMember = membership(
+      ce, element, memberSet, definitions, new Set(seen), realSymbols, makeWitness
+    );
+    if (setExpr.operator === 'IndexedIntersection') {
+      return {
+        expr: ce.box(['Implies', inDomain.expr, inMember.expr]),
+        unresolvedSets: inDomain.unresolvedSets || inMember.unresolvedSets,
+      };
+    }
+    return {
+      expr: ce.box([
+        'Exists', ce.box(['Element', index, setExpr.ops[1]]), inMember.expr,
+      ]),
+      unresolvedSets: true,
+      unsafeEvaluation: true,
+    };
+  }
+
+  if ((setExpr?.operator === 'OpenBall' || setExpr?.operator === 'ClosedBall')
+    && setExpr.nops === 2) {
+    const [center, radius] = setExpr.ops;
+    [element, center, radius].forEach((part) => (
+      part?.unknowns?.forEach((symbol) => realSymbols.add(symbol))
+    ));
+    const real = membership(
+      ce, element, ce.box('RealNumbers'), definitions, new Set(seen), realSymbols, makeWitness
+    );
+    const distance = ce.box(['Abs', ce.box(['Subtract', element, center])]);
+    const inside = ce.box([
+      setExpr.operator === 'OpenBall' ? 'Less' : 'LessEqual', distance, radius,
+    ]);
+    return {
+      expr: connective(ce, 'And', [real.expr, inside]),
+      unresolvedSets: real.unresolvedSets,
+    };
+  }
 
   if (setExpr?.operator === 'Set') {
     const operands = setExpr.ops ?? [];
@@ -186,7 +454,9 @@ function membership(ce, element, originalSet, definitions, seen = new Set()) {
   }
 
   if (setExpr?.operator === 'Union' || setExpr?.operator === 'Intersection') {
-    const parts = setExpr.ops.map((operand) => membership(ce, element, operand, definitions, new Set(seen)));
+    const parts = setExpr.ops.map((operand) => membership(
+      ce, element, operand, definitions, new Set(seen), realSymbols, makeWitness
+    ));
     return {
       expr: connective(ce, setExpr.operator === 'Union' ? 'Or' : 'And', parts.map((part) => part.expr)),
       unresolvedSets: parts.some((part) => part.unresolvedSets),
@@ -194,8 +464,12 @@ function membership(ce, element, originalSet, definitions, seen = new Set()) {
   }
 
   if (setExpr?.operator === 'SetMinus' && setExpr.nops === 2) {
-    const left = membership(ce, element, setExpr.ops[0], definitions, new Set(seen));
-    const right = membership(ce, element, setExpr.ops[1], definitions, new Set(seen));
+    const left = membership(
+      ce, element, setExpr.ops[0], definitions, new Set(seen), realSymbols, makeWitness
+    );
+    const right = membership(
+      ce, element, setExpr.ops[1], definitions, new Set(seen), realSymbols, makeWitness
+    );
     return {
       expr: connective(ce, 'And', [left.expr, ce.box(['Not', right.expr])]),
       unresolvedSets: left.unresolvedSets || right.unresolvedSets,
@@ -220,6 +494,7 @@ function membership(ce, element, originalSet, definitions, seen = new Set()) {
     // The arithmetic proof engine's free variables range over the reals. A
     // symbolic real expression therefore satisfies this guard by construction.
     if (setExpr.symbol === 'RealNumbers' && hasUnknowns) {
+      element.unknowns.forEach((symbol) => realSymbols.add(symbol));
       return { expr: truth(ce, true), unresolvedSets: false };
     }
 
@@ -239,25 +514,114 @@ function freshWitness(ce, makeWitness) {
   return symbol ? ce.box(symbol) : ce.box('SetWitness');
 }
 
-function extensionalRelation(ce, leftSet, rightSet, operator, definitions, makeWitness, seen) {
+function expressionKey(expr) {
+  try { return JSON.stringify(expr?.json); } catch { return null; }
+}
+
+function subsetPair(expr) {
+  if (!expr || expr.nops !== 2) return null;
+  if (expr.operator === 'SubsetEqual' || expr.operator === 'Subset') return expr.ops;
+  if (expr.operator === 'SupersetEqual' || expr.operator === 'Superset') {
+    return [expr.ops[1], expr.ops[0]];
+  }
+  return null;
+}
+
+function collectSubsetFacts(expr, out = new Set()) {
+  if (expr?.operator === 'And') {
+    expr.ops.forEach((operand) => collectSubsetFacts(operand, out));
+    return out;
+  }
+  const pair = subsetPair(expr);
+  if (pair) out.add(`${expressionKey(pair[0])}\u0000${expressionKey(pair[1])}`);
+  return out;
+}
+
+/**
+ * Product monotonicity is a safe structural proof even though replacing a
+ * product subset with all factor subsets would not be an equivalence when a
+ * factor is empty. Recognise only the implication direction here and leave all
+ * other cases to extensional membership lowering.
+ */
+function structurallyImpliesProductSubset(antecedent, consequent, definitions) {
+  const pair = subsetPair(consequent);
+  if (!pair) return false;
+  const left = resolveDefinedSet(pair[0], definitions, new Set());
+  const right = resolveDefinedSet(pair[1], definitions, new Set());
+  if (left?.operator !== 'CartesianProduct' || right?.operator !== 'CartesianProduct'
+    || left.nops !== right.nops) return false;
+
+  const facts = collectSubsetFacts(antecedent);
+  return left.ops.every((factor, index) => {
+    const target = right.ops[index];
+    if (expressionKey(factor) === expressionKey(target)) return true;
+    if (standardSubset(factor, target) === true) return true;
+    return facts.has(`${expressionKey(factor)}\u0000${expressionKey(target)}`);
+  });
+}
+
+function extensionalRelation(
+  ce, leftSet, rightSet, operator, definitions, makeWitness, seen, realSymbols
+) {
   const witness = freshWitness(ce, makeWitness);
-  const left = membership(ce, witness, leftSet, definitions, new Set(seen));
-  const right = membership(ce, witness, rightSet, definitions, new Set(seen));
+  const left = membership(
+    ce, witness, leftSet, definitions, new Set(seen), realSymbols, makeWitness
+  );
+  const right = membership(
+    ce, witness, rightSet, definitions, new Set(seen), realSymbols, makeWitness
+  );
   return {
     expr: ce.box([operator, left.expr, right.expr]),
     unresolvedSets: left.unresolvedSets || right.unresolvedSets,
   };
 }
 
-function lowerNode(ce, expr, definitions, seen = new Set(), makeWitness) {
+function lowerFiniteQuantifier(
+  ce, operator, binding, body, definitions, seen, makeWitness, realSymbols
+) {
+  if (binding?.operator !== 'Element' || binding.nops !== 2 || !binding.ops[0]?.symbol) {
+    return null;
+  }
+  const domain = materializeFiniteSet(ce, binding.ops[1], definitions);
+  if (!domain) return null;
+  const items = domain.symbol === 'EmptySet' ? [] : domain.ops;
+  const operands = [];
+  for (const item of items) {
+    let specialized;
+    try {
+      specialized = body.subs({ [binding.ops[0].symbol]: item });
+    } catch {
+      return null;
+    }
+    operands.push(lowerNode(
+      ce, specialized, definitions, new Set(seen), makeWitness, realSymbols
+    ));
+  }
+  return {
+    expr: connective(ce, operator === 'ForAll' ? 'And' : 'Or', operands.map(({ expr }) => expr)),
+    unresolvedSets: operands.some((operand) => operand.unresolvedSets),
+    unsafeEvaluation: operands.some((operand) => operand.unsafeEvaluation),
+  };
+}
+
+function lowerNode(ce, expr, definitions, seen = new Set(), makeWitness, realSymbols = new Set()) {
   if (!expr) return { expr, unresolvedSets: false };
   const op = expr.operator;
 
+  if (op === 'Implies' && expr.nops === 2
+    && structurallyImpliesProductSubset(expr.ops[0], expr.ops[1], definitions)) {
+    return { expr: truth(ce, true), unresolvedSets: false };
+  }
+
   if (op === 'Element' && expr.nops === 2) {
-    return membership(ce, expr.ops[0], expr.ops[1], definitions, seen);
+    return membership(
+      ce, expr.ops[0], expr.ops[1], definitions, seen, realSymbols, makeWitness
+    );
   }
   if (op === 'NotElement' && expr.nops === 2) {
-    const inner = membership(ce, expr.ops[0], expr.ops[1], definitions, seen);
+    const inner = membership(
+      ce, expr.ops[0], expr.ops[1], definitions, seen, realSymbols, makeWitness
+    );
     return { expr: ce.box(['Not', inner.expr]), unresolvedSets: inner.unresolvedSets };
   }
 
@@ -265,29 +629,57 @@ function lowerNode(ce, expr, definitions, seen = new Set(), makeWitness) {
     const [left, right] = op === 'SubsetEqual' ? expr.ops : [expr.ops[1], expr.ops[0]];
     const resolvedLeft = resolveDefinedSet(left, definitions, new Set());
     const resolvedRight = resolveDefinedSet(right, definitions, new Set());
+    if (resolvedLeft?.operator === 'PowerSet' && resolvedLeft.nops === 1
+      && resolvedRight?.operator === 'PowerSet' && resolvedRight.nops === 1) {
+      return lowerNode(
+        ce,
+        ce.box(['SubsetEqual', resolvedLeft.ops[0], resolvedRight.ops[0]]),
+        definitions,
+        seen,
+        makeWitness,
+        realSymbols,
+      );
+    }
     const standard = standardSubset(resolvedLeft, resolvedRight);
     if (standard !== null) return { expr: truth(ce, standard), unresolvedSets: false };
 
     // A finite subset is just the conjunction of its concrete membership
     // checks. This supplies exact witnesses without introducing a universal
     // element that the numeric prover would otherwise have to discover.
-    if (resolvedLeft?.operator === 'Set' && !setBuilderParts(resolvedLeft)) {
-      const checks = resolvedLeft.ops.map((item) => membership(
-        ce, item, resolvedRight, definitions, new Set(seen)
+    const finiteLeft = materializeFiniteSet(ce, resolvedLeft, definitions);
+    if (finiteLeft) {
+      const items = finiteLeft.symbol === 'EmptySet' ? [] : finiteLeft.ops;
+      const checks = items.map((item) => membership(
+        ce, item, resolvedRight, definitions, new Set(seen), realSymbols, makeWitness
       ));
       return {
         expr: connective(ce, 'And', checks.map((check) => check.expr)),
         unresolvedSets: checks.some((check) => check.unresolvedSets),
       };
     }
-    return extensionalRelation(ce, left, right, 'Implies', definitions, makeWitness, seen);
+    return extensionalRelation(
+      ce, left, right, 'Implies', definitions, makeWitness, seen, realSymbols
+    );
   }
 
   if ((op === 'Equal' || op === 'IdenticallyEqual') && expr.nops === 2
     && isSetExpression(expr.ops[0], definitions)
     && isSetExpression(expr.ops[1], definitions)) {
-    const left = concreteFiniteSet(expr.ops[0], definitions);
-    const right = concreteFiniteSet(expr.ops[1], definitions);
+    const resolvedLeft = resolveDefinedSet(expr.ops[0], definitions, new Set());
+    const resolvedRight = resolveDefinedSet(expr.ops[1], definitions, new Set());
+    if (resolvedLeft?.operator === 'PowerSet' && resolvedLeft.nops === 1
+      && resolvedRight?.operator === 'PowerSet' && resolvedRight.nops === 1) {
+      return lowerNode(
+        ce,
+        ce.box([op, resolvedLeft.ops[0], resolvedRight.ops[0]]),
+        definitions,
+        seen,
+        makeWitness,
+        realSymbols,
+      );
+    }
+    const left = materializeFiniteSet(ce, resolvedLeft, definitions);
+    const right = materializeFiniteSet(ce, resolvedRight, definitions);
     if (left && right) {
       try {
         const evaluated = ce.box(['Equal', left, right]).evaluate();
@@ -297,7 +689,7 @@ function lowerNode(ce, expr, definitions, seen = new Set(), makeWitness) {
       } catch { /* use extensional equality below */ }
     }
     return extensionalRelation(
-      ce, expr.ops[0], expr.ops[1], 'Equivalent', definitions, makeWitness, seen
+      ce, expr.ops[0], expr.ops[1], 'Equivalent', definitions, makeWitness, seen, realSymbols
     );
   }
 
@@ -305,35 +697,36 @@ function lowerNode(ce, expr, definitions, seen = new Set(), makeWitness) {
   // This is also how the rest of the app interprets free numeric variables.
   if (op === 'ForAll' && expr.nops === 2) {
     const [binding, body] = expr.ops;
+    const finite = lowerFiniteQuantifier(
+      ce, op, binding, body, definitions, seen, makeWitness, realSymbols
+    );
+    if (finite) return finite;
     if (binding?.operator === 'Element' && binding.nops === 2 && binding.ops[0]?.symbol) {
-      const domain = membership(ce, binding.ops[0], binding.ops[1], definitions, seen);
-      const loweredBody = lowerNode(ce, body, definitions, seen, makeWitness);
+      const domain = membership(
+        ce, binding.ops[0], binding.ops[1], definitions, seen, realSymbols, makeWitness
+      );
+      const loweredBody = lowerNode(ce, body, definitions, seen, makeWitness, realSymbols);
       return {
         expr: ce.box(['Implies', domain.expr, loweredBody.expr]),
         unresolvedSets: domain.unresolvedSets || loweredBody.unresolvedSets,
       };
     }
-    if (binding?.symbol) return lowerNode(ce, body, definitions, seen, makeWitness);
+    if (binding?.symbol) {
+      return lowerNode(ce, body, definitions, seen, makeWitness, realSymbols);
+    }
   }
 
   if (op === 'Exists' && expr.nops === 2) {
     const [binding, body] = expr.ops;
-    if (binding?.operator === 'Element' && binding.nops === 2 && binding.ops[0]?.symbol) {
-      const domain = concreteFiniteSet(binding.ops[1], definitions);
-      if (domain) {
-        const loweredBody = lowerNode(ce, body, definitions, seen, makeWitness);
-        return {
-          expr: ce.box(['Exists', ce.box(['Element', binding.ops[0], domain]), loweredBody.expr]),
-          unresolvedSets: loweredBody.unresolvedSets,
-          unsafeEvaluation: loweredBody.unsafeEvaluation,
-        };
-      }
-    }
+    const finite = lowerFiniteQuantifier(
+      ce, op, binding, body, definitions, seen, makeWitness, realSymbols
+    );
+    if (finite) return finite;
   }
 
   if (LOGICAL.has(op)) {
     const operands = expr.ops.map((operand) => lowerNode(
-      ce, operand, definitions, new Set(seen), makeWitness
+      ce, operand, definitions, new Set(seen), makeWitness, realSymbols
     ));
     return {
       expr: ce.box([op, ...operands.map((operand) => operand.expr)]),
@@ -372,6 +765,7 @@ function inferSetSymbols(expr, definitions, out = new Set()) {
   const op = expr.operator;
   if (op === 'Element' || op === 'NotElement') {
     markSetSymbols(expr.ops[1], definitions, out);
+    if (expr.ops[1]?.operator === 'PowerSet') markSetSymbols(expr.ops[0], definitions, out);
   } else if (SET_RELATIONS.has(op)) {
     expr.ops.forEach((operand) => markSetSymbols(operand, definitions, out));
   } else if ((op === 'Equal' || op === 'IdenticallyEqual') && expr.nops === 2) {
@@ -403,5 +797,9 @@ export function lowerSetProposition(ce, expr, definitions, makeWitness) {
     if (witness === null) witness = makeWitness?.() ?? 'SetWitness';
     return witness;
   };
-  return lowerNode(ce, expr, typedDefinitions, new Set(), sharedWitness);
+  const realSymbols = new Set();
+  const lowered = lowerNode(
+    ce, expr, typedDefinitions, new Set(), sharedWitness, realSymbols
+  );
+  return { ...lowered, realSymbols };
 }

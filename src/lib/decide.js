@@ -17,9 +17,13 @@
 
 import { polynomialCoefficients, proveImplicationBySign, proveRelationBySign } from './polynomial.js';
 import { decideRationalPolynomialFormula, rationalLatex } from './rational-polynomial.js';
+import { proveComplexStatement } from './complex-proof.js';
 
 const RELATIONS = new Set([
   'Equal', 'NotEqual', 'Less', 'LessEqual', 'Greater', 'GreaterEqual', 'IdenticallyEqual',
+]);
+const CHAIN_RELATIONS = new Set([
+  'Equal', 'IdenticallyEqual', 'Less', 'LessEqual', 'Greater', 'GreaterEqual',
 ]);
 
 const BOOLEAN_CONNECTIVES = new Set(['And', 'Or', 'Not', 'Implies', 'Equivalent']);
@@ -723,9 +727,7 @@ function proveSymbolically(ce, expr) {
   // when every adjacent link holds, so prove those links individually. Do not
   // apply this to NotEqual: its n-ary meaning is pairwise distinct, which is
   // stronger than adjacent inequality alone.
-  if (expr.nops > 2 && [
-    'Equal', 'IdenticallyEqual', 'Less', 'LessEqual', 'Greater', 'GreaterEqual',
-  ].includes(op)) {
+  if (expr.nops > 2 && CHAIN_RELATIONS.has(op)) {
     return expr.ops.slice(1).every((right, index) => (
       proveSymbolically(ce, ce.box([op, expr.ops[index], right])) === true
     )) ? true : null;
@@ -751,6 +753,26 @@ function proveSymbolically(ce, expr) {
   }
   if (op === 'Implies' && expr.nops === 2) {
     const [left, right] = expr.ops;
+    if (left.symbol === 'False' || right.symbol === 'True') return true;
+    if (left.symbol === 'True') return proveSymbolically(ce, right);
+    // A homogeneous relation chain is conjunction-shaped even though Compute
+    // Engine stores it as one n-ary relation. Domain lowering commonly places
+    // such a chain on either side of an implication, so expose its adjacent
+    // links here just as we do for a literal `And` below.
+    if (right.nops > 2 && CHAIN_RELATIONS.has(right.operator)) {
+      return right.ops.slice(1).every((operand, index) => proveSymbolically(
+        ce,
+        ce.box(['Implies', left, ce.box([right.operator, right.ops[index], operand])]),
+      ) === true) ? true : null;
+    }
+    if (left.nops > 2 && CHAIN_RELATIONS.has(left.operator)) {
+      const links = left.ops.slice(1).map((operand, index) => (
+        ce.box([left.operator, left.ops[index], operand])
+      ));
+      if (links.some((link) => (
+        proveSymbolically(ce, ce.box(['Implies', link, right])) === true
+      ))) return true;
+    }
     if (left.operator === 'Or') {
       return left.ops.every((operand) => proveSymbolically(ce, ce.box(['Implies', operand, right])) === true)
         ? true : null;
@@ -801,6 +823,7 @@ export function decideStatement(ce, expr, options = {}) {
   const complex = options.complex ?? false;
   const allowSampling = options.allowSampling !== false;
   const allowDirectEvaluation = options.allowDirectEvaluation !== false;
+  const realSymbols = new Set(options.realSymbols ?? []);
 
   // 1a. Outright proof by the CAS.
   let evaluated;
@@ -835,6 +858,9 @@ export function decideStatement(ce, expr, options = {}) {
   }
 
   // 1c. Relation-level reasoning over the connectives.
+  if (proveComplexStatement(ce, expr, realSymbols) === true) {
+    return { value: true, method: 'proved', samples: 0, counterexample: null };
+  }
   if (proveSymbolically(ce, expr) === true) {
     return { value: true, method: 'proved', samples: 0, counterexample: null };
   }
@@ -853,7 +879,10 @@ export function decideStatement(ce, expr, options = {}) {
     return { value: null, method: 'undecided', samples: 0, counterexample: null };
   }
 
-  const pool = buildSamplePool(ce, expr, complex);
+  // Domain evidence is per variable. The presence of `i` elsewhere in a
+  // statement may make unconstrained variables complex, but a variable bound
+  // by `x in R` must never receive one of those complex candidates.
+  const pools = unknowns.map((id) => buildSamplePool(ce, expr, complex && !realSymbols.has(id)));
   const random = makeRandom(hashString(expr.toString() + unknowns.join(',')));
   const started = Date.now();
   let decisive = 0;
@@ -865,22 +894,28 @@ export function decideStatement(ce, expr, options = {}) {
     } catch {
       return null;
     }
+
+    // Evaluate the closed relation as a whole first. Compute Engine knows many
+    // transcendental identities at concrete arguments, while subtracting the
+    // two sides first can turn exact equality into a tiny floating residual
+    // (`Re(e^(i/2)) - cos(1/2)` was about 8e-17) and invent a counterexample.
+    let direct = null;
+    try { direct = truthOf(substituted.evaluate()); } catch { /* use exact relation handling */ }
+    if (direct === true) return true;
+
     const exact = truthOfConstantStatement(ce, substituted);
     if (exact !== null) return exact;
-    try {
-      return truthOf(substituted.evaluate());
-    } catch {
-      return null;
-    }
+    return direct;
   };
 
   const describe = (indices) => unknowns.map((id, k) => ({
     id,
-    valueLatex: pool[indices[k]].latex,
+    valueLatex: pools[k][indices[k]].latex,
   }));
 
   if (unknowns.length === 1) {
     const id = unknowns[0];
+    const pool = pools[0];
     const limit = Math.min(pool.length, MAX_SAMPLES);
     for (let k = 0; k < limit; k++) {
       if (k % 16 === 0 && Date.now() - started > TIME_BUDGET_MS) break;
@@ -892,22 +927,29 @@ export function decideStatement(ce, expr, options = {}) {
     }
   } else {
     const indices = new Array(unknowns.length).fill(0);
-    const zeroIndex = pool.findIndex((candidate) => candidate.latex === '0');
+    const maxPoolLength = Math.max(...pools.map((pool) => pool.length));
+    const zeroIndices = pools.map((pool) => pool.findIndex((candidate) => candidate.latex === '0'));
     for (let k = 0; k < MAX_SAMPLES; k++) {
       if (k % 16 === 0 && Date.now() - started > TIME_BUDGET_MS) break;
       // Probe the true diagonal, then each coordinate axis. Axis probes matter
       // for equations where an extra variable is the only semantic difference.
-      if (k < pool.length) {
-        indices.fill(k);
-      } else if (zeroIndex >= 0 && k < pool.length * (unknowns.length + 1)) {
-        indices.fill(zeroIndex);
-        const offset = k - pool.length;
-        indices[Math.floor(offset / pool.length)] = offset % pool.length;
+      if (k < maxPoolLength) {
+        for (let v = 0; v < unknowns.length; v++) {
+          indices[v] = Math.min(k, pools[v].length - 1);
+        }
+      } else if (zeroIndices.every((index) => index >= 0)
+        && k < maxPoolLength * (unknowns.length + 1)) {
+        for (let v = 0; v < unknowns.length; v++) indices[v] = zeroIndices[v];
+        const offset = k - maxPoolLength;
+        const variable = Math.floor(offset / maxPoolLength);
+        indices[variable] = Math.min(offset % maxPoolLength, pools[variable].length - 1);
       } else {
-        for (let v = 0; v < unknowns.length; v++) indices[v] = Math.floor(random() * pool.length);
+        for (let v = 0; v < unknowns.length; v++) {
+          indices[v] = Math.floor(random() * pools[v].length);
+        }
       }
       const assignment = {};
-      unknowns.forEach((id, v) => { assignment[id] = pool[indices[v]].expr; });
+      unknowns.forEach((id, v) => { assignment[id] = pools[v][indices[v]].expr; });
       const verdict = trial(assignment);
       if (verdict === false) {
         return { value: false, method: 'counterexample', samples: decisive, counterexample: describe(indices) };

@@ -9,10 +9,12 @@ import {
   getTopLevelChainCheckpoints,
 } from '../src/lib/top-level.js';
 import {
+  ANALYSIS_LAYOUT,
   CALCULATOR_LAYOUT,
   INLINE_SHORTCUTS,
   KEYBOARD_LAYOUTS,
   SET_LAYOUT,
+  TOPOLOGY_LAYOUT,
 } from '../src/lib/mathfield.js';
 import { parseSheetStateHash, serializeSheetState } from '../src/lib/url-state.js';
 
@@ -135,6 +137,16 @@ checkChainLayout(
   '\\begin{align}x & < x+1\\\\  & \\le x+2\\end{align}',
 );
 checkChainLayout(
+  'real-domain equality chain',
+  '\\forall t\\in\\mathbb{R},A=B=C',
+  '\\begin{align}\\forall t\\in\\mathbb{R},A & = B\\\\  & = C\\end{align}',
+);
+checkChainLayout(
+  'set-builder predicate relation stays inside the first chain term',
+  '\\{x\\in\\mathbb{R}\\mid x=0\\}=\\{0\\}=\\{0\\}',
+  '\\begin{align}\\{x\\in\\mathbb{R}\\mid x=0\\} & = \\{0\\}\\\\  & = \\{0\\}\\end{align}',
+);
+checkChainLayout(
   'logical chains take priority over their relations',
   'x>3\\implies x>2\\implies x>1',
   '\\begin{align}x>3 & \\implies x>2\\\\  & \\implies x>1\\end{align}',
@@ -176,6 +188,32 @@ if (JSON.stringify(inequalityCheckpoints) === JSON.stringify([
 else {
   failed++;
   failures.push(`inequality checkpoints: got ${JSON.stringify(inequalityCheckpoints)}`);
+}
+
+const domainChain = getTopLevelChainCheckpoints(
+  '\\forall t\\in\\mathbb{R},A=B=C'
+);
+if (domainChain?.scope === '\\forall t\\in\\mathbb{R},'
+  && JSON.stringify(domainChain.parts) === JSON.stringify(['A', 'B', 'C'])
+  && JSON.stringify(domainChain.checkpoints) === JSON.stringify([
+    '\\forall t\\in\\mathbb{R},A=B',
+    '\\forall t\\in\\mathbb{R},A=B=C',
+  ])) passed++;
+else {
+  failed++;
+  failures.push(`domain chain scope/checkpoints: got ${JSON.stringify(domainChain)}`);
+}
+
+const finiteDomainChain = getTopLevelChainCheckpoints(
+  '\\forall x\\in\\{1,2\\},x=x+0=0+x'
+);
+if (finiteDomainChain?.scope === '\\forall x\\in\\{1,2\\},'
+  && finiteDomainChain.checkpoints.every((checkpoint) => (
+    checkpoint.startsWith('\\forall x\\in\\{1,2\\},')
+  ))) passed++;
+else {
+  failed++;
+  failures.push(`finite domain chain lost its scope: got ${JSON.stringify(finiteDomainChain)}`);
 }
 
 const bareEqualityCheckpoint = new Sheet().evaluateLine('a=b', { allowDefinitions: false });
@@ -261,22 +299,49 @@ else failures.push('boxed calculator templates should use the smaller keycap sca
 const functionKeyLabels = CALCULATOR_LAYOUT.rows.at(-2)
   .filter((entry) => entry.label)
   .map((entry) => entry.label);
-if (JSON.stringify(functionKeyLabels) === JSON.stringify(['sin', 'cos', 'tan', 'ln', 'log'])) passed++;
+if (JSON.stringify(functionKeyLabels) === JSON.stringify(['sin', 'cos', 'tan', 'ln', 'log', 'conj'])) passed++;
 else failures.push(`calculator function row is incomplete: ${functionKeyLabels.join(', ')}`);
 if (KEYBOARD_LAYOUTS[0] === CALCULATOR_LAYOUT
   && KEYBOARD_LAYOUTS[1] === SET_LAYOUT
-  && JSON.stringify(KEYBOARD_LAYOUTS.slice(2)) === JSON.stringify(['alphabetic', 'greek'])) passed++;
+  && KEYBOARD_LAYOUTS[2] === ANALYSIS_LAYOUT
+  && KEYBOARD_LAYOUTS[3] === TOPOLOGY_LAYOUT
+  && JSON.stringify(KEYBOARD_LAYOUTS.slice(4)) === JSON.stringify(['alphabetic', 'greek'])) passed++;
 else failures.push('redundant numeric and symbols keyboard tabs should be removed');
 const setKeys = SET_LAYOUT.rows.flat().map((entry) => entry.latex ?? entry.insert ?? entry.label);
-if (['\\in', '\\notin', '\\subseteq', '\\cup', '\\cap', '\\setminus', '\\varnothing', '\\mathbb{R}']
+if (['\\in', '\\notin', '\\subseteq', '\\cup', '\\cap', '\\setminus', '\\varnothing', '\\times',
+  '\\mathcal{P}\\left(#?\\right)', '\\mathbb{R}']
   .every((expected) => setKeys.includes(expected))) passed++;
 else failures.push('set keyboard should expose the core relation, operation, and domain keys');
+const cartesianKey = SET_LAYOUT.rows.flat().find((entry) => entry.tooltip === 'Cartesian product');
+if (cartesianKey?.insert === '#?\\times#?') passed++;
+else failures.push('the Cartesian-product key should create two operand slots');
+if (INLINE_SHORTCUTS.powerset === '\\mathcal{P}\\left(#?\\right)') passed++;
+else failures.push('the powerset inline shortcut should insert conventional power-set notation');
+if (INLINE_SHORTCUTS.cart === '\\operatorname{CartesianProduct}\\left(#?,#?\\right)') passed++;
+else failures.push('the cart inline shortcut should insert an unambiguous Cartesian product');
 if (setKeys.filter((entry) => entry === '\\varnothing' || entry === '\\emptyset').length === 1) passed++;
 else failures.push('set keyboard should expose exactly one empty-set key');
 const standardSetKeys = SET_LAYOUT.rows[2];
 if (standardSetKeys.length === 5
   && standardSetKeys.every((entry) => !entry.class?.split(/\s+/).includes('small'))) passed++;
 else failures.push('standard number-set keys should use the full keycap scale');
+const analysisKeys = ANALYSIS_LAYOUT.rows.flat();
+if (['\\epsilon', '\\delta'].every((latex) => analysisKeys.some((entry) => entry.latex === latex))
+  && ['ball', 'cball', 'cont', 'limit']
+    .every((label) => analysisKeys.some((entry) => entry.label === label))) passed++;
+else failures.push('analysis keyboard should expose witnesses and metric balls');
+const topologyKeys = TOPOLOGY_LAYOUT.rows.flat();
+if (['\\mathsf{Disc}', '\\mathsf{Ind}', '\\mathsf{Cof}', '\\mathsf{Met}',
+  '\\mathsf{Sub}', '\\mathsf{Prod}', '\\mathsf{Ax}_{\\varnothing}',
+  '\\mathsf{Ax}_{\\bigcup}', '\\mathsf{Top}', '\\bigcup_{i\\in I}']
+  .every((latex) => topologyKeys.some((entry) => entry.latex === latex))) passed++;
+else failures.push('topology keyboard should expose constructors, axioms, and indexed families');
+if (INLINE_SHORTCUTS.cont?.includes('\\operatorname{cont}')
+  && INLINE_SHORTCUTS.topology?.includes('\\mathsf{Top}')
+  && INLINE_SHORTCUTS.metricopen?.includes('\\mathcal{O}_{\\mathbb{R}}')
+  && INLINE_SHORTCUTS.cofinite?.includes('\\mathsf{Cof}')
+  && INLINE_SHORTCUTS.axunions?.includes('\\mathsf{Ax}_{\\bigcup}')) passed++;
+else failures.push('analysis proof predicates should have inline shortcuts');
 check('closed forms survive the fold', ['\\sqrt{8}'], isValue('2\\sqrt{2}'));
 check('pi stays symbolic', ['2\\pi'], isApprox(2 * Math.PI));
 check('third stays exact', ['\\frac{1}{3}'], isValue('\\frac{1}{3}'));
@@ -344,6 +409,57 @@ console.log('== algebraic equation truthiness ==');
 check('identity', ['(x+1)^2=x^2+2x+1'], isTrue);
 check('non-identity', ['(x+1)^2=x^2+1'], isFalse);
 check('trig identity', ['\\sin(x)^2+\\cos(x)^2=1'], isTrue);
+
+console.log('== domain-aware transcendental sampling ==');
+const eulerRealPart = '\\operatorname{\\mathrm{Re}}\\left(e^{it}\\right)=\\cos\\left(t\\right)';
+check('Euler real-part identity is false for an unrestricted complex variable',
+  [eulerRealPart], isCounterexample('i'));
+check('a real universal domain excludes complex samples',
+  [`\\forall t\\in\\mathbb{R},${eulerRealPart}`], isProved);
+check('a real-domain implication excludes complex samples',
+  [`t\\in\\mathbb{R}\\implies${eulerRealPart}`], isProved);
+check('a finite-domain universal equality chain is proved link by link', [
+  '\\forall x\\in\\{-2,-1,0,1,2\\},x=x+0=0+x',
+], isProved);
+check('a finite-domain premise scopes every equality-chain conclusion', [
+  'x\\in\\{-2,-1,0,1,2\\}\\implies x=x+0=0+x',
+], isProved);
+check('a real quantifier scopes a complete implication chain', [
+  '\\forall x\\in\\mathbb{R},x>3\\implies x>2\\implies x>1',
+], isProved);
+check('nested real quantifiers scope a complete equivalence chain', [
+  '\\forall x\\in\\mathbb{R},\\forall y\\in\\mathbb{R},'
+    + 'x+y=y+x\\iff 2(x+y)=2(y+x)\\iff 3(x+y)=3(y+x)',
+], isProved);
+const eulerDerivation = [
+  '\\forall t\\in\\mathbb{R},\\operatorname{Re}(e^{it})='
+    + '\\frac{e^{it}+\\overline{e^{it}}}{2}',
+  '\\forall t\\in\\mathbb{R},\\frac{e^{it}+\\overline{e^{it}}}{2}='
+    + '\\frac{e^{it}+e^{\\overline{it}}}{2}',
+  '\\forall t\\in\\mathbb{R},\\frac{e^{it}+e^{\\overline{it}}}{2}='
+    + '\\frac{e^{it}+e^{-it}}{2}',
+  '\\forall t\\in\\mathbb{R},\\frac{e^{it}+e^{-it}}{2}=\\cos(t)',
+];
+eulerDerivation.forEach((line, index) => {
+  check(`Euler derivation step ${index + 1} is exactly checked`, [line], isProved);
+});
+const eulerDerivationChain = '\\forall t\\in\\mathbb{R},\\operatorname{Re}(e^{it})='
+  + '\\frac{e^{it}+\\overline{e^{it}}}{2}='
+  + '\\frac{e^{it}+e^{\\overline{it}}}{2}='
+  + '\\frac{e^{it}+e^{-it}}{2}=\\cos(t)';
+const eulerChainCheckpoints = getTopLevelChainCheckpoints(eulerDerivationChain)?.checkpoints;
+if (eulerChainCheckpoints?.length === 4 && eulerChainCheckpoints.every((checkpoint) => (
+  isProved(new Sheet().evaluateLine(checkpoint, { allowDefinitions: false })) === null
+))) passed++;
+else {
+  failed++;
+  failures.push(`domain-scoped Euler chain was not proved at every checkpoint: ${
+    JSON.stringify(eulerChainCheckpoints)
+  }`);
+}
+check('the real assumption is necessary for conjugating it', [
+  '\\overline{e^{it}}=e^{-it}',
+], isFalse);
 
 console.log('== equivalence of algebraic equations ==');
 check('scaled equation', ['x^2-1=0\\iff 2x^2-2=0'], isTrue);

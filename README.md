@@ -18,7 +18,13 @@ npm install
 npm run dev
 ```
 
-`npm test` runs the evaluation-core tests (921 cases, no browser needed).
+`npm test` runs the evaluation-core tests (3,962 cases, no browser needed).
+
+`npm run fuzz` runs deterministic property fuzzing over domain-scoped chain
+layout, formatting round trips, incomplete editor input, and exact equality,
+inequality, implication, and equivalence proofs. Failures print their seed and complete generated case;
+increase a run with, for example,
+`npm run fuzz -- --seed 12345 --iterations 50000 --engine-iterations 1000`.
 `npm run build` emits a static bundle to `dist/` — fonts included, no network at runtime.
 
 ## Desktop
@@ -265,27 +271,151 @@ Finite sets and numeric set-builders are first-class values and may be named:
 A := {1, 2, 3}
 S := {x ∈ ℝ | x² < 4}
 A ∪ {3, 4}                     {1, 2, 3, 4}
+𝒫({1, 2})                      {∅, {1}, {2}, {1, 2}}
+{1, 2} ∈ 𝒫(A)                 true, proved
+X ∈ 𝒫(A) ⟺ X ⊆ A             true, proved
+{1, 2} × {3, 4}               {(1,3), (1,4), (2,3), (2,4)}
+(x,y) ∈ X × Y ⟺ x ∈ X ∧ y ∈ Y true, proved
 2 ∈ A ∧ 4 ∉ A                 true
 S = {x ∈ ℝ | -2 < x ∧ x < 2} true, proved
 ```
 
 The set keyboard supplies `∈`, `∉`, subset/superset relations, `∪`, `∩`, set
-difference, finite-set and set-builder templates, `∅`, and the standard number
+difference, Cartesian products `×`, power sets `𝒫(A)`, finite-set and set-builder
+templates, `∅`, and the standard number
 sets `ℕ`, `ℤ`, `ℚ`, `ℝ`, and `ℂ`. Universal and existential propositions over
 finite sets are evaluated exactly; restricted universal propositions such as
 `∀x ∈ S, P(x)` are lowered to implication. Set-builder membership, subset, and
 equality become arithmetic propositions, so they inherit the polynomial proof
 procedures below.
 
+Power sets of finite bases with at most eight elements expand as exact values;
+larger ones remain compact to avoid exponential rendering. Proposition proofs
+do not depend on expansion: membership lowers to `X ⊆ A`, while power-set
+subset and equality lower to the corresponding relations between their bases.
+The `powerset` inline shortcut and `℘(A)` are accepted aliases for `𝒫(A)`.
+
+Finite Cartesian products expand to exact sets of ordered tuples up to 256
+elements; larger products remain compact. Tuple membership, non-membership,
+finite quantifiers, empty-factor laws, distribution over union/intersection,
+and factor-wise monotonicity implications are proved symbolically. In a set
+position `A × B` is recognized contextually, while numeric `2 × 3` remains
+multiplication. The `cart` inline shortcut inserts an explicit, unambiguous
+Cartesian-product expression when no surrounding set context is available.
+
+Domain evidence is preserved in both symbolic proofs and numeric fallback. The
+statement `∀t ∈ ℝ, Re(e^(it)) = cos(t)` is proved by exact real-part,
+conjugation, exponential, and cosine rewrites. When a statement does fall back
+to testing, `t` receives only real samples even if the formula contains `i`;
+an unrestricted variable may still receive complex samples. Restrictions are
+tracked per variable rather than switching the entire statement wholesale.
+
 Extensional set algebra is also proved symbolically. For arbitrary sets, for
 example, `A ∪ ∅ = A`, `A ⊆ B ∧ B ⊆ C ⟹ A ⊆ C`, and
 `A = B ⟺ A ⊆ B ∧ B ⊆ A` are proofs rather than sampled guesses.
+
+### Analysis and topology
+
+The `ε–δ` keyboard layer supplies real metric balls, explicit continuity and
+limit witnesses, and finite-topology predicates. A witness is checked as a
+proof certificate rather than tested numerically:
+
+```
+g(x) := 2x + 1
+d(ε) := ε / 2
+cont(g, a, ε, d(ε))            true, proved
+limitw(g, a, 2a + 1, ε, d(ε)) true, proved
+```
+
+`cont(f,a,ε,δ)` proves both `ε > 0 ⟹ δ > 0` and
+`ε > 0 ∧ |x-a| < δ ⟹ |f(x)-f(a)| < ε` for a fresh real `x`.
+`limitw(f,a,L,ε,δ)` checks the corresponding punctured-neighborhood
+obligation. The supplied `ε` is locally bound by the certificate; a free point
+such as `a` is interpreted universally, as with other free variables in a
+statement. Sampling is disabled for certificates: a witness is either proved
+exactly or reported as undecided.
+
+Open and closed balls are first-class real sets:
+
+```
+1 ∈ ball(0, 2)                 true, proved
+3 ∉ ball(0, 2)                 true, proved
+𝒪_ℝ(ball(a, r))               true, proved
+𝒞_ℝ(closedball(a,r))          true, proved
+```
+
+Finite topologies are verified directly from the axioms, and finite-map
+continuity is checked by exact preimages of every open set:
+
+```
+E := {1, 2}
+τ := {∅, {1}, E}
+Top(τ, E)                      true, proved
+𝒪({1}, τ)                     true, proved
+𝒞({2}, τ, E)                  true, proved
+𝒩({1}, 1, τ)                  true, proved
+Cts(f,X,τX,Y,τY)              checks every open preimage exactly
+```
+
+The keyboard renders these predicates as `𝖳𝗈𝗉`, `𝒪`, `𝒞`, `𝒩`, and `𝖢𝗍𝗌`.
+The textual inputs `topology`, `openin`, `closedin`, `nbrhd`, `metricopen`,
+`metricclosed`, and `continuousmap` remain accepted shortcuts and expand to
+the compact notation.
+
+The deterministic test matrix exhausts all 256 families of subsets of a
+three-point carrier and every map between every pair of two-point topologies.
+
+#### Infinite topology certificates
+
+The dedicated `τ` keyboard proves infinite topologies from finite theorem
+certificates rather than attempting to enumerate their open sets. The supported
+intensional constructors are:
+
+```
+Disc(X)                 discrete topology on X
+Ind(X)                  indiscrete topology on X
+Cof(X)                  cofinite topology on X
+Met(ℝ)                  usual real metric topology
+Sub(τ, X, Y)            subspace topology on a certified Y ⊆ X
+Prod(τX, X, τY, Y)      product topology on X × Y
+```
+
+Each axiom is a separate proposition with its own verdict:
+
+```
+Ax_∅(τ, X)              ∅ ∈ τ
+Ax_X(τ, X)              X ∈ τ
+Ax_⋃(τ, X)              arbitrary unions of members remain in τ
+Ax_∩(τ, X)              finite intersections of members remain in τ
+Top(τ, X)               all topology obligations are certified
+```
+
+These predicates open a local, universally quantified proof obligation over
+arbitrary open sets or an arbitrary indexed family and discharge it using the
+constructor's exact theorem schema. They never sample. A mismatched carrier or
+an unsupported constructor remains undecided.
+
+`Γ ⊢ P` is accepted sequent notation for proving `P` from the assumptions in
+`Γ`; its scope is that line only. For example, after `τ := Disc(ℝ)`, the line
+`𝒪(U,τ) ∧ 𝒪(V,τ) ⊢ 𝒪(U ∩ V,τ)` is reduced extensionally and proved for arbitrary
+sets `U` and `V`.
+
+Indexed families are first-class sets. The `⋃` and `⋂` keys accept a family
+function and index set; `IndexedUnion(F,I)` and `IndexedIntersection(F,I)`
+remain accepted textual aliases. These expressions
+materialize exactly when `I` is finite. With a symbolic index set they remain
+intensional instead of being enumerated. In the real metric topology,
+`Meet(r,s,min(r,s))` records the explicit positive-radius witness used by the
+finite-intersection proof.
 
 ### Chains
 
 `a = b = c`, `a < b ≤ c`, and `x > 2 ⟺ 2x > 4 ⟺ 3x > 6` chain
 conjunctively — every neighbouring pair must hold, so a chain of equalities or
 equivalences means "all of these say the same thing". The same applies to `⟹`.
+Leading domain declarations scope the complete chain, so
+`∀t ∈ ℝ, A(t) = B(t) = C(t)` keeps `t ∈ ℝ` attached to every proof checkpoint
+while displaying the declaration only once.
 
 In the editor, typing a second top-level `=`, inequality, `⟺`, or `⟹` lays out
 the chain as one multiline expression. The first link stays on the first visual
@@ -318,10 +448,22 @@ Statements with free variables go through three passes:
 
    - **Sets.** Concrete finite set operations and quantifiers are evaluated
      exactly. Membership in a set-builder substitutes the candidate into its
-     predicate; subset and equality are reduced extensionally to implication
-     and equivalence. Boolean set-algebra identities are then proved as
+     predicate; Cartesian tuple membership is reduced coordinate-by-coordinate;
+     subset and equality are reduced extensionally to implication and equivalence.
+     Boolean set-algebra identities are then proved as
      tautologies, while numeric predicates continue through the arithmetic
      procedures below.
+   - **Analysis and topology.** Continuity and limit witnesses expand into
+     exact positivity and neighborhood implications. Real-ball membership
+     becomes an absolute-value inequality. Finite topology axioms, open/closed
+     membership, neighborhoods, and continuous-map preimages are enumerated
+     exactly. Infinite discrete, indiscrete, cofinite, real-metric, subspace,
+     and product topologies use finite axiom certificates and explicit
+     witnesses instead; none of these predicates use numeric sampling as proof.
+   - **Complex rewrites.** Real part, conjugation, the exponential, and cosine
+     have an exact shared normal form. Real-domain evidence discharges
+     `conjugate(t) = t`, which checks every link of the exponential derivation
+     of `Re(e^(it)) = cos(t)` without numerical substitution.
 
    - **Affine consequents.** If the consequent's polynomial is `c·p + k` for
      constants `c` and `k`, the implication reduces to a sign test on `c` and
@@ -393,7 +535,9 @@ Sampling is deterministic, so the same sheet always gives the same verdict.
 | `src/lib/identifiers.js` | rewrites user names to parser-safe symbols, and back |
 | `src/lib/engine.js` | classifies each line, applies definitions, formats results |
 | `src/lib/decide.js` | the symbolic + sampling decision procedure |
+| `src/lib/complex-proof.js` | exact real-part, conjugation, exponential, and cosine rewrites |
 | `src/lib/sets.js` | set values, set-builders, extensional lowering, finite set decisions |
+| `src/lib/analysis.js` | epsilon-delta certificates, metric balls, finite and intensional topology proofs |
 | `src/lib/polynomial.js` | polynomial sign certificates and exact sign-chart routing |
 | `src/lib/rational-polynomial.js` | exact rational arithmetic, Sturm root isolation, sign charts |
 | `src/lib/top-level.js` | brace-aware operator splitting, and the multiline chain layout |
@@ -414,6 +558,16 @@ applied to arguments — before parsing, and rewritten back for display.
 ## Known limits
 
 - A `true` from the sampling pass is evidence, not proof (see above).
+- Complex identity proofs currently cover the exact rewrite fragment used by
+  `Re`, conjugation, `exp`, and exponential cosine. They are not a complete
+  complex-analysis or transcendental decision procedure.
+- Analysis certificates currently require an explicit delta witness and rely
+  on the exact arithmetic prover to discharge the resulting obligations.
+  Affine examples are robust; general nonlinear limits, sequences, derivatives,
+  integrals, compactness, and connectedness are not yet decision procedures.
+  Infinite-topology proofs are exact for the documented constructor schemas;
+  arbitrary user-defined topology predicates and general higher-order set
+  proofs remain undecided.
 - The prover is complete for single-variable polynomial implications and
   equivalences when all coefficients are rational (up to its degree and
   resource limits), as well as for linear relations in several variables.
@@ -423,11 +577,12 @@ applied to arguments — before parsing, and rewritten back for display.
   certificates. Other cases fall back to sampling.
 - The supported set fragment is extensional rather than a general axiomatic set
   theory: finite sets, standard numeric domains, numeric set-builders, ordinary
-  set operations, membership, subset/superset, equality, and finite/restricted
-  quantifiers. General ZF constructions, nested arbitrary sets, power sets,
-  cardinality proofs, and unrestricted existential proofs are not currently a
-  decision procedure. Unsupported symbolic set claims report `undecided`; they
-  are never certified by numeric sampling.
+  set operations, power sets, Cartesian products, membership, subset/superset,
+  equality, finite/restricted quantifiers, and finite indexed-family
+  materialization. General ZF constructions, unrestricted nested
+  sets, cardinality proofs, and unrestricted existential proofs are not
+  currently a decision procedure. Unsupported symbolic set claims report
+  `undecided`; they are never certified by numeric sampling.
 - Inside the serif channel `}` exits text mode, so a literal `}` cannot be typed
   there.
 - The working sheet is stored in `localStorage`, and its lines plus Exact/Decimal

@@ -5,6 +5,13 @@ const LOGICAL_BLOCKERS = [...LOGICAL_CHAIN_TOKENS, '\\impliedby', '\\land', '\\l
 const EQUALITY_TOKENS = ['='];
 const INEQUALITY_TOKENS = ['\\leq', '\\geq', '\\le', '\\ge', '\\lt', '\\gt', '<', '>'];
 const NON_ORDER_RELATION_TOKENS = ['\\neq', '\\ne'];
+const QUANTIFIER_TOKENS = ['\\forall', '\\exists'];
+const OPEN_VISUAL_DELIMITERS = [
+  '\\lbrace', '\\lbrack', '\\lparen', '\\lvert', '\\lVert', '\\lfloor', '\\lceil', '\\{',
+];
+const CLOSE_VISUAL_DELIMITERS = [
+  '\\rbrace', '\\rbrack', '\\rparen', '\\rvert', '\\rVert', '\\rfloor', '\\rceil', '\\}',
+];
 // MathLive's `aligned` environment looks right but is non-root and therefore
 // serializes as an empty mathfield. `align` has the same columns while keeping
 // the complete editable value in the field model.
@@ -14,10 +21,18 @@ const ALIGNED_END = '\\end{align}';
 export function indexOfTopLevel(latex, token) {
   let braceDepth = 0;
   let groupDepth = 0;
+  let visualDepth = 0;
   for (let i = 0; i < latex.length; i++) {
     const c = latex[i];
     if (c === '\\') {
-      if (latex.startsWith(token, i) && braceDepth === 0 && groupDepth === 0) return i;
+      const delimiter = visualDelimiterAt(latex, i);
+      if (delimiter) {
+        visualDepth += delimiter.delta;
+        i += delimiter.length - 1;
+        continue;
+      }
+      if (latex.startsWith(token, i)
+        && braceDepth === 0 && groupDepth === 0 && visualDepth === 0) return i;
       i++;
       continue;
     }
@@ -33,11 +48,19 @@ export function splitTopLevel(latex, token, options = {}) {
   const parts = [];
   let braceDepth = 0;
   let groupDepth = 0;
+  let visualDepth = 0;
   let start = 0;
   for (let i = 0; i < latex.length; i++) {
     const c = latex[i];
     if (c === '\\') {
-      if (braceDepth === 0 && groupDepth === 0 && latex.startsWith(token, i)) {
+      const delimiter = visualDelimiterAt(latex, i);
+      if (delimiter) {
+        visualDepth += delimiter.delta;
+        i += delimiter.length - 1;
+        continue;
+      }
+      if (braceDepth === 0 && groupDepth === 0 && visualDepth === 0
+        && latex.startsWith(token, i)) {
         parts.push(latex.slice(start, i));
         i += token.length - 1;
         start = i + 1;
@@ -66,17 +89,43 @@ function isTokenAt(latex, token, index) {
   return true;
 }
 
-function splitTopLevelOperators(latex, tokens) {
+function sizedFenceAt(latex, index, command, delta) {
+  if (!isTokenAt(latex, command, index)) return null;
+  let end = index + command.length;
+  while (/\s/.test(latex[end] ?? '')) end++;
+  if (latex[end] === '\\') {
+    const delimiter = /^(?:\\[A-Za-z]+|\\.)/.exec(latex.slice(end))?.[0];
+    if (delimiter) end += delimiter.length;
+  } else if (end < latex.length) {
+    end++;
+  }
+  return { delta, length: end - index };
+}
+
+function visualDelimiterAt(latex, index) {
+  const left = sizedFenceAt(latex, index, '\\left', 1);
+  if (left) return left;
+  const right = sizedFenceAt(latex, index, '\\right', -1);
+  if (right) return right;
+  const open = OPEN_VISUAL_DELIMITERS.find((token) => isTokenAt(latex, token, index));
+  if (open) return { delta: 1, length: open.length };
+  const close = CLOSE_VISUAL_DELIMITERS.find((token) => isTokenAt(latex, token, index));
+  return close ? { delta: -1, length: close.length } : null;
+}
+
+/** Split on any listed operator while respecting braces and visual fences. */
+export function splitTopLevelOperators(latex, tokens) {
   const ordered = [...tokens].sort((a, b) => b.length - a.length);
   const parts = [];
   const operators = [];
   let braceDepth = 0;
   let groupDepth = 0;
+  let visualDepth = 0;
   let start = 0;
 
   for (let i = 0; i < latex.length; i++) {
     const c = latex[i];
-    if (braceDepth === 0 && groupDepth === 0) {
+    if (braceDepth === 0 && groupDepth === 0 && visualDepth === 0) {
       const token = ordered.find((candidate) => isTokenAt(latex, candidate, i));
       if (token) {
         parts.push(latex.slice(start, i).trim());
@@ -87,6 +136,12 @@ function splitTopLevelOperators(latex, tokens) {
       }
     }
     if (c === '\\') {
+      const delimiter = visualDelimiterAt(latex, i);
+      if (delimiter) {
+        visualDepth += delimiter.delta;
+        i += delimiter.length - 1;
+        continue;
+      }
       i++;
       continue;
     }
@@ -103,17 +158,65 @@ function hasTopLevelOperator(latex, tokens) {
   return splitTopLevelOperators(latex, tokens).operators.length > 0;
 }
 
-function makeChain(logical, kind, parts, operators) {
+function firstTopLevelComma(latex) {
+  let braceDepth = 0;
+  let groupDepth = 0;
+  let visualDepth = 0;
+  for (let i = 0; i < latex.length; i++) {
+    const c = latex[i];
+    if (c === '\\') {
+      const delimiter = visualDelimiterAt(latex, i);
+      if (delimiter) {
+        visualDepth += delimiter.delta;
+        i += delimiter.length - 1;
+        continue;
+      }
+      i++;
+      continue;
+    }
+    if (c === '{') braceDepth++;
+    else if (c === '}') braceDepth--;
+    else if ((c === '(' || c === '[') && braceDepth === 0) groupDepth++;
+    else if ((c === ')' || c === ']') && braceDepth === 0) groupDepth--;
+    else if (c === ',' && braceDepth === 0 && groupDepth === 0 && visualDepth === 0) return i;
+  }
+  return -1;
+}
+
+/**
+ * Keep leading quantifiers outside the expression that is split into visual
+ * chain links. This makes the scope deliberate: every cumulative checkpoint
+ * receives the same declared domain instead of merely inheriting it as part
+ * of the first equality operand.
+ */
+export function splitTopLevelQuantifierScope(latex) {
+  let body = latex.trim();
+  let scope = '';
+  const clauses = [];
+
+  while (QUANTIFIER_TOKENS.some((token) => isTokenAt(body, token, 0))) {
+    const comma = firstTopLevelComma(body);
+    if (comma < 0) break;
+    const clause = body.slice(0, comma + 1);
+    scope += clause;
+    clauses.push(clause);
+    body = body.slice(comma + 1).trim();
+  }
+  return { scope, clauses, body };
+}
+
+function makeChain(logical, kind, parts, operators, scope = '') {
   if (operators.length < 2 || parts.slice(0, -1).some((part) => part.length === 0)) return null;
 
   let prefix = parts[0];
   const checkpoints = operators.map((operator, index) => {
     const separator = operator.startsWith('\\') ? `${operator} ` : operator;
     prefix += `${separator}${parts[index + 1]}`;
-    return parts[index + 1] ? prefix : null;
+    return parts[index + 1] ? `${scope}${prefix}` : null;
   });
   return {
     logical,
+    scope,
     kind,
     token: operators.every((operator) => operator === operators[0]) ? operators[0] : null,
     operators,
@@ -205,33 +308,36 @@ export function flattenTopLevelChain(latex) {
  */
 export function getTopLevelChainCheckpoints(latex) {
   const logical = flattenTopLevelChain(latex).trim();
+  const { scope, body } = splitTopLevelQuantifierScope(logical);
   for (const token of LOGICAL_CHAIN_TOKENS) {
     const other = LOGICAL_CHAIN_TOKENS.find((candidate) => candidate !== token);
-    const parts = splitTopLevel(logical, token, { keepEmpty: true });
+    const parts = splitTopLevel(body, token, { keepEmpty: true });
     if (parts.length < 3) continue;
-    if (splitTopLevel(logical, other, { keepEmpty: true }).length > 1) return null;
-    return makeChain(logical, 'logical', parts, Array(parts.length - 1).fill(token));
+    if (splitTopLevel(body, other, { keepEmpty: true }).length > 1) return null;
+    return makeChain(
+      logical, 'logical', parts, Array(parts.length - 1).fill(token), scope
+    );
   }
 
   // Relations inside implication/conjunction operands belong to those logical
   // statements; they must not be mistaken for one relation chain.
-  if (hasTopLevelOperator(logical, LOGICAL_BLOCKERS)) return null;
+  if (hasTopLevelOperator(body, LOGICAL_BLOCKERS)) return null;
 
-  const equalities = splitTopLevelOperators(logical, EQUALITY_TOKENS);
-  const inequalities = splitTopLevelOperators(logical, INEQUALITY_TOKENS);
-  const hasNonOrderRelation = hasTopLevelOperator(logical, NON_ORDER_RELATION_TOKENS);
+  const equalities = splitTopLevelOperators(body, EQUALITY_TOKENS);
+  const inequalities = splitTopLevelOperators(body, INEQUALITY_TOKENS);
+  const hasNonOrderRelation = hasTopLevelOperator(body, NON_ORDER_RELATION_TOKENS);
 
   if (equalities.operators.length >= 2) {
     if (inequalities.operators.length || hasNonOrderRelation) return null;
     // Avoid treating pasted `:=` text as a chain before MathLive has a chance
     // to turn it into `\\coloneq`.
     if (equalities.parts.slice(0, -1).some((part) => part.endsWith(':'))) return null;
-    return makeChain(logical, 'equality', equalities.parts, equalities.operators);
+    return makeChain(logical, 'equality', equalities.parts, equalities.operators, scope);
   }
 
   if (inequalities.operators.length >= 2) {
     if (equalities.operators.length || hasNonOrderRelation) return null;
-    return makeChain(logical, 'inequality', inequalities.parts, inequalities.operators);
+    return makeChain(logical, 'inequality', inequalities.parts, inequalities.operators, scope);
   }
   return null;
 }
@@ -250,7 +356,7 @@ export function formatTopLevelChain(latex) {
 
   const right = (part) => part || '\\placeholder{}';
   const rows = [
-    `${chain.parts[0]} & ${chain.operators[0]} ${right(chain.parts[1])}`,
+    `${chain.scope}${chain.parts[0]} & ${chain.operators[0]} ${right(chain.parts[1])}`,
     ...chain.parts.slice(2).map((part, index) => (
       ` & ${chain.operators[index + 1]} ${right(part)}`
     )),

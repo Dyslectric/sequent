@@ -12,6 +12,33 @@ export const INLINE_SHORTCUTS = {
   Re: '\\operatorname{Re}\\left(#?\\right)',
   Im: '\\operatorname{Im}\\left(#?\\right)',
   conj: '\\operatorname{conj}\\left(#?\\right)',
+  powerset: '\\mathcal{P}\\left(#?\\right)',
+  cart: '\\operatorname{CartesianProduct}\\left(#?,#?\\right)',
+  ball: '\\operatorname{ball}\\left(#?,#?\\right)',
+  closedball: '\\operatorname{closedball}\\left(#?,#?\\right)',
+  cont: '\\operatorname{cont}\\left(#?,#?,#?,#?\\right)',
+  limitw: '\\operatorname{limitw}\\left(#?,#?,#?,#?,#?\\right)',
+  topology: '\\mathsf{Top}\\left(#?,#?\\right)',
+  openin: '\\mathcal{O}\\left(#?,#?\\right)',
+  closedin: '\\mathcal{C}\\left(#?,#?,#?\\right)',
+  nbrhd: '\\mathcal{N}\\left(#?,#?,#?\\right)',
+  metricopen: '\\mathcal{O}_{\\mathbb{R}}\\left(#?\\right)',
+  metricclosed: '\\mathcal{C}_{\\mathbb{R}}\\left(#?\\right)',
+  continuousmap: '\\mathsf{Cts}\\left(#?,#?,#?,#?,#?\\right)',
+  disc: '\\mathsf{Disc}\\left(#?\\right)',
+  indisc: '\\mathsf{Ind}\\left(#?\\right)',
+  cofinite: '\\mathsf{Cof}\\left(#?\\right)',
+  metrictop: '\\mathsf{Met}\\left(#?\\right)',
+  subtop: '\\mathsf{Sub}\\left(#?,#?,#?\\right)',
+  prodtop: '\\mathsf{Prod}\\left(#?,#?,#?,#?\\right)',
+  axempty: '\\mathsf{Ax}_{\\varnothing}\\left(#?,#?\\right)',
+  axcarrier: '\\mathsf{Ax}_{X}\\left(#?,#?\\right)',
+  axunions: '\\mathsf{Ax}_{\\bigcup}\\left(#?,#?\\right)',
+  axintersections: '\\mathsf{Ax}_{\\cap}\\left(#?,#?\\right)',
+  meetw: '\\mathsf{Meet}\\left(#?,#?,\\min(#?,#?)\\right)',
+  iunion: '\\mathop{\\bigcup}\\left(#?,#?\\right)',
+  iintersection: '\\mathop{\\bigcap}\\left(#?,#?\\right)',
+  given: '\\vdash',
   iff: '\\iff',
   implies: '\\implies',
   impl: '\\implies',
@@ -128,7 +155,8 @@ export const CALCULATOR_LAYOUT = {
       fn('tan', '\\tan(#?)', 'tangent'),
       fn('ln', '\\ln(#?)', 'natural logarithm'),
       fn('log', '\\log(#?)', 'logarithm'),
-      { class: 'separator w50' },
+      fn('conj', '\\overline{#?}', 'complex conjugate'),
+      { class: 'separator w40' },
       { class: 'separator w15' },
     ],
     [
@@ -157,6 +185,8 @@ export const SET_LAYOUT = {
     ],
     [
       key('\\cup'), key('\\cap'), key('\\setminus'), key('\\varnothing'),
+      key('\\times', { insert: '#?\\times#?', tooltip: 'Cartesian product' }),
+      key('\\mathcal{P}\\left(#?\\right)', { class: 'small', tooltip: 'power set' }),
       key('\\left\\{#?\\right\\}', { class: 'small', tooltip: 'finite set' }),
       key('\\left\\{#?\\mid #?\\right\\}', { class: 'small', tooltip: 'set builder' }),
     ],
@@ -177,8 +207,104 @@ export const SET_LAYOUT = {
   ],
 };
 
+/** Proof-oriented notation for elementary analysis and finite topology. */
+export const ANALYSIS_LAYOUT = {
+  label: 'ε–δ',
+  tooltip: 'Analysis and topology',
+  rows: [
+    [
+      key('\\epsilon'), key('\\delta'), key('\\forall'), key('\\exists'), key('\\to'),
+      key('\\left|#?\\right|', { class: 'small', tooltip: 'absolute value' }),
+    ],
+    [
+      fn('ball', '\\operatorname{ball}(#?,#?)', 'open ball'),
+      fn('cball', '\\operatorname{closedball}(#?,#?)', 'closed ball'),
+      fn('cont', '\\operatorname{cont}(#?,#?,#?,#?)', 'continuity witness'),
+      fn('limit', '\\operatorname{limitw}(#?,#?,#?,#?,#?)', 'limit witness'),
+    ],
+    [
+      key('\\mathcal{O}_{\\mathbb{R}}', {
+        insert: '\\mathcal{O}_{\\mathbb{R}}(#?)', tooltip: 'open in the real metric',
+      }),
+      key('\\mathcal{C}_{\\mathbb{R}}', {
+        insert: '\\mathcal{C}_{\\mathbb{R}}(#?)', tooltip: 'closed in the real metric',
+      }),
+      key('('), key(')'), key(','),
+      { label: '[left]', tooltip: 'move left' },
+      { label: '[right]', tooltip: 'move right' },
+      { label: '[backspace]', tooltip: 'backspace', class: 'action hide-shift calc-backspace' },
+      { label: '[return]', tooltip: 'new line' },
+    ],
+  ],
+};
+
+/** Infinite topology constructors and their independently checkable axioms. */
+export const TOPOLOGY_LAYOUT = {
+  label: 'τ',
+  tooltip: 'Topology proofs',
+  rows: [
+    [
+      key('\\mathsf{Disc}', { insert: '\\mathsf{Disc}(#?)', tooltip: 'discrete topology' }),
+      key('\\mathsf{Ind}', { insert: '\\mathsf{Ind}(#?)', tooltip: 'indiscrete topology' }),
+      key('\\mathsf{Cof}', { insert: '\\mathsf{Cof}(#?)', tooltip: 'cofinite topology' }),
+      key('\\mathsf{Met}', { insert: '\\mathsf{Met}(#?)', tooltip: 'real metric topology' }),
+      key('\\mathsf{Sub}', {
+        insert: '\\mathsf{Sub}(#?,#?,#?)', tooltip: 'subspace topology',
+      }),
+      key('\\mathsf{Prod}', {
+        insert: '\\mathsf{Prod}(#?,#?,#?,#?)', tooltip: 'product topology',
+      }),
+    ],
+    [
+      key('\\mathsf{Ax}_{\\varnothing}', {
+        insert: '\\mathsf{Ax}_{\\varnothing}(#?,#?)', tooltip: 'empty-set axiom',
+      }),
+      key('\\mathsf{Ax}_{X}', {
+        insert: '\\mathsf{Ax}_{X}(#?,#?)', tooltip: 'carrier axiom',
+      }),
+      key('\\mathsf{Ax}_{\\bigcup}', {
+        insert: '\\mathsf{Ax}_{\\bigcup}(#?,#?)', tooltip: 'arbitrary-union axiom',
+      }),
+      key('\\mathsf{Ax}_{\\cap}', {
+        insert: '\\mathsf{Ax}_{\\cap}(#?,#?)', tooltip: 'finite-intersection axiom',
+      }),
+      key('\\mathsf{Top}', { insert: '\\mathsf{Top}(#?,#?)', tooltip: 'topology certificate' }),
+      key('\\mathsf{Meet}', {
+        insert: '\\mathsf{Meet}(#?,#?,\\min(#?,#?))',
+        tooltip: 'metric intersection witness',
+      }),
+      key('\\vdash', { tooltip: 'prove from assumptions' }),
+    ],
+    [
+      key('\\mathcal{O}', { insert: '\\mathcal{O}(#?,#?)', tooltip: 'open in topology' }),
+      key('\\mathcal{C}', { insert: '\\mathcal{C}(#?,#?,#?)', tooltip: 'closed in topology' }),
+      key('\\mathcal{N}', { insert: '\\mathcal{N}(#?,#?,#?)', tooltip: 'neighborhood' }),
+      key('\\mathsf{Cts}', {
+        insert: '\\mathsf{Cts}(#?,#?,#?,#?,#?)', tooltip: 'finite continuous map',
+      }),
+    ],
+    [
+      key('\\bigcup_{i\\in I}', {
+        insert: '\\mathop{\\bigcup}(#?,#?)',
+        tooltip: 'indexed union: family, index set', class: 'small',
+      }),
+      key('\\bigcap_{i\\in I}', {
+        insert: '\\mathop{\\bigcap}(#?,#?)',
+        tooltip: 'indexed intersection: family, index set', class: 'small',
+      }),
+      key('('), key(')'), key(','),
+      { label: '[left]', tooltip: 'move left' },
+      { label: '[right]', tooltip: 'move right' },
+      { label: '[backspace]', tooltip: 'backspace', class: 'action hide-shift calc-backspace' },
+      { label: '[return]', tooltip: 'new line' },
+    ],
+  ],
+};
+
 /** The custom calculator and set layers subsume MathLive's stock symbol tabs. */
-export const KEYBOARD_LAYOUTS = [CALCULATOR_LAYOUT, SET_LAYOUT, 'alphabetic', 'greek'];
+export const KEYBOARD_LAYOUTS = [
+  CALCULATOR_LAYOUT, SET_LAYOUT, ANALYSIS_LAYOUT, TOPOLOGY_LAYOUT, 'alphabetic', 'greek',
+];
 
 /**
  * Dock the shared virtual keyboard inside `container` and keep it there.
@@ -241,6 +367,15 @@ export function setupVirtualKeyboard(container, options = {}) {
       requestAnimationFrame(syncDockHeight);
     }
   };
+
+  // MathLive replaces the active plate when a layout tab is selected. The
+  // ResizeObserver is still attached to the old plate at that instant, so a
+  // shorter layout can inherit the previous layout's height and leave a blank
+  // band above its keys. Reacquire and measure the new plate after the click
+  // has been rendered.
+  container.addEventListener('click', () => {
+    requestAnimationFrame(() => requestAnimationFrame(syncDockHeight));
+  });
 
   setCollapsed(collapsed);
   return { keyboard, setCollapsed };

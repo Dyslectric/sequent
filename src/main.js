@@ -30,6 +30,13 @@ const DEMO_ADDITIONS = [
   'x+y-z>0\\iff(x+y-z)(x^2+y^2+z^2+1)>0',
 ];
 
+const topologyAxiomSteps = (topology, carrier) => [
+  `\\mathsf{Ax}_{\\varnothing}(${topology},${carrier})`
+    + `\\land\\mathsf{Ax}_{X}(${topology},${carrier})`,
+  `\\mathsf{Ax}_{\\bigcup}(${topology},${carrier})`
+    + `\\land\\mathsf{Ax}_{\\cap}(${topology},${carrier})`,
+];
+
 const DEMO_LINES = [
   '\\frac{1}{3}+\\frac{1}{6}',
   '\\sqrt{8}',
@@ -44,10 +51,65 @@ const DEMO_LINES = [
   'T\\land P(1)',
   'A:=\\{1,2,3\\}',
   'A\\cup\\{3,4\\}',
+  '\\mathcal{P}(\\{1,2\\})',
+  '\\{1,2\\}\\in\\mathcal{P}(A)',
+  'X\\in\\mathcal{P}(A)\\iff X\\subseteq A',
+  '\\{1,2\\}\\times\\{3,4\\}',
+  '\\mathcal{P}(\\{1,2\\}\\times\\{3\\})',
+  '(2,4)\\in\\{1,2\\}\\times\\{3,4\\}',
+  '(x,y)\\in X\\times Y\\iff x\\in X\\land y\\in Y',
+  'X\\subseteq Y\\implies X\\times Z\\subseteq Y\\times Z',
   '2\\in A\\land4\\notin A',
   'S:=\\{x\\in\\mathbb{R}\\mid x^2<4\\}',
   '1\\in S\\land3\\notin S',
   'S=\\{x\\in\\mathbb{R}\\mid -2<x\\land x<2\\}',
+  '\\forall x\\in A,x^2\\ge1',
+  'X\\cup\\varnothing=X',
+  'X=Y\\iff X\\subseteq Y\\land Y\\subseteq X',
+  'X\\subseteq Y\\land Y\\subseteq Z\\implies X\\subseteq Z',
+  'g(x):=2x+1',
+  'd(\\epsilon):=\\epsilon/2',
+  '\\operatorname{cont}(g,a,\\epsilon,d(\\epsilon))'
+    + '\\land\\operatorname{limitw}(g,a,2a+1,\\epsilon,d(\\epsilon))',
+  '1\\in\\operatorname{ball}(0,2)\\land3\\notin\\operatorname{ball}(0,2)'
+    + '\\land\\mathcal{O}_{\\mathbb{R}}(\\operatorname{ball}(a,r))',
+  'E:=\\{1,2\\}',
+  '\\tau:=\\{\\varnothing,\\{1\\},E\\}',
+  '\\mathsf{Top}(\\tau,E)'
+    + '\\land\\mathcal{O}(\\{1\\},\\tau)'
+    + '\\land\\mathcal{C}(\\{2\\},\\tau,E)',
+  'F(i):=\\{i,2\\}',
+  '\\mathop{\\bigcup}(F,\\{1,2\\})=\\{1,2\\}'
+    + '\\land\\mathop{\\bigcap}(F,\\{1,2\\})=\\{2\\}',
+  '\\tau_D:=\\mathsf{Disc}(\\mathbb{R})',
+  '\\mathsf{Ax}_{\\varnothing}(\\tau_D,\\mathbb{R})',
+  '\\mathsf{Ax}_{X}(\\tau_D,\\mathbb{R})',
+  '\\mathsf{Ax}_{\\bigcup}(\\tau_D,\\mathbb{R})',
+  '\\mathsf{Ax}_{\\cap}(\\tau_D,\\mathbb{R})',
+  '\\mathcal{O}(U,\\tau_D)\\land\\mathcal{O}(V,\\tau_D)'
+    + '\\vdash\\mathcal{O}(U\\cap V,\\tau_D)',
+  '\\mathsf{Top}(\\tau_D,\\mathbb{R})',
+  '\\tau_I:=\\mathsf{Ind}(\\mathbb{R})',
+  ...topologyAxiomSteps('\\tau_I', '\\mathbb{R}'),
+  '\\mathsf{Top}(\\tau_I,\\mathbb{R})',
+  '\\tau_C:=\\mathsf{Cof}(\\mathbb{R})',
+  ...topologyAxiomSteps('\\tau_C', '\\mathbb{R}'),
+  '\\mathsf{Top}(\\tau_C,\\mathbb{R})',
+  '\\tau_d:=\\mathsf{Met}(\\mathbb{R})',
+  '\\mathsf{Meet}(r,s,\\min(r,s))',
+  ...topologyAxiomSteps('\\tau_d', '\\mathbb{R}'),
+  '\\mathsf{Top}(\\tau_d,\\mathbb{R})',
+  'K:=\\operatorname{closedball}(0,1)',
+  '\\tau_S:=\\mathsf{Sub}(\\tau_d,\\mathbb{R},K)',
+  ...topologyAxiomSteps('\\tau_S', 'K'),
+  '\\mathsf{Top}(\\tau_S,K)',
+  '\\tau_P:=\\mathsf{Prod}(\\tau_d,\\mathbb{R},\\tau_d,\\mathbb{R})',
+  ...topologyAxiomSteps('\\tau_P', '\\mathbb{R}\\times\\mathbb{R}'),
+  '\\mathsf{Top}(\\tau_P,\\mathbb{R}\\times\\mathbb{R})',
+  '\\forall t\\in\\mathbb{R},\\operatorname{Re}(e^{it})='
+    + '\\frac{e^{it}+\\overline{e^{it}}}{2}='
+    + '\\frac{e^{it}+e^{\\overline{it}}}{2}='
+    + '\\frac{e^{it}+e^{-it}}{2}=\\cos(t)',
   '(x+1)^2=x^2+2x+1=x^2+1+2x',
   'x<x+1\\le x+2',
   'x^2-1=0\\iff(x-1)(x+1)=0',

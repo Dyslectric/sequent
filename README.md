@@ -20,7 +20,7 @@ npm install
 npm run dev
 ```
 
-`npm test` runs the evaluation-core tests (4,143 cases, no browser needed).
+`npm test` runs the evaluation-core tests (4,147 cases, no browser needed).
 
 `npm run fuzz` runs deterministic property fuzzing over domain-scoped chain
 layout, formatting round trips, incomplete editor input, and exact equality,
@@ -205,6 +205,18 @@ Numbers work over ℕ/ℤ/ℚ/ℝ/ℂ. Rationals and surds stay exact (`√8` �
 the on-screen keys, or write `⌊ ⌋` / `⌈ ⌉`).
 
 ## Typing
+
+The on-screen keyboard is split by what a line is doing. **expr** builds
+values — the number pad, constants, powers and radicals, the rounding and
+trigonometric functions. **rel** turns those into a claim — the relations and
+the logical connectives. Then **{∈}**, **ε–δ**, **τ** and **grp** carry sets,
+analysis, topology and algebra, and MathLive's own **abc** and **greek** tabs
+carry letters.
+
+`:=` appears on both **expr** and **rel**, since a definition is written on
+either kind of line. The serif **abc** toggle lives on **rel**; **expr**
+deliberately carries no comma and no mode switch, so nothing on it does
+anything but build a value.
 
 - **Enter** starts a new line. **Backspace** on an empty line removes it. Arrow
   keys move between lines.

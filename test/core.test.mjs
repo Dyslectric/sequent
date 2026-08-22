@@ -11,9 +11,10 @@ import {
 import {
   ALGEBRA_LAYOUT,
   ANALYSIS_LAYOUT,
-  CALCULATOR_LAYOUT,
+  EXPR_LAYOUT,
   INLINE_SHORTCUTS,
   KEYBOARD_LAYOUTS,
+  REL_LAYOUT,
   SET_LAYOUT,
   TOPOLOGY_LAYOUT,
 } from '../src/lib/mathfield.js';
@@ -257,9 +258,9 @@ check('ceil of pi', ['\\lceil\\pi\\rceil'], isValue('4'));
 check('floor of -pi', ['\\lfloor-\\pi\\rfloor'], isValue('-4'));
 check('rounding over symbolic constants folds', ['\\lceil\\pi\\rceil+\\lfloor-\\pi\\rfloor'], isValue('0'));
 check('rnd of e', ['\\operatorname{rnd}(e)'], isValue('3'));
-const rndKey = CALCULATOR_LAYOUT.rows.flat().find((entry) => entry.label === 'rnd');
+const rndKey = EXPR_LAYOUT.rows.flat().find((entry) => entry.label === 'rnd');
 if (rndKey?.insert === '\\operatorname{rnd}(#?)' && INLINE_SHORTCUTS.rnd) passed++;
-else failures.push('calculator keyboard and inline shortcut should expose rnd');
+else failures.push('expression keyboard and inline shortcut should expose rnd');
 const keyboardUnitWidth = (entry) => {
   if (entry.width) return entry.width;
   const widthClass = entry.class?.match(/(?:^|\s)w(\d+)(?:\s|$)/)?.[1];
@@ -274,40 +275,59 @@ const keyboardKeyStart = (row, latex) => {
   return -1;
 };
 const numberStarts = ['7', '4', '1', '0'].map((latex, row) => (
-  keyboardKeyStart(CALCULATOR_LAYOUT.rows[row], latex)
+  keyboardKeyStart(EXPR_LAYOUT.rows[row], latex)
 ));
 if (numberStarts.every((start) => start === numberStarts[0])) passed++;
-else failures.push(`calculator number columns should align: ${numberStarts.join(', ')}`);
-const calculatorRowWidths = CALCULATOR_LAYOUT.rows.slice(0, 4)
+else failures.push(`expression number columns should align: ${numberStarts.join(', ')}`);
+const numericRowWidths = EXPR_LAYOUT.rows.slice(0, 4)
   .map((row) => row.reduce((sum, entry) => sum + keyboardUnitWidth(entry), 0));
-if (calculatorRowWidths.every((width) => width === calculatorRowWidths[0])) passed++;
-else failures.push(`calculator number rows should have equal widths: ${calculatorRowWidths.join(', ')}`);
-const returnKey = CALCULATOR_LAYOUT.rows.at(-1).find((entry) => entry.label === '[return]');
+if (numericRowWidths.every((width) => width === numericRowWidths[0])) passed++;
+else failures.push(`expression number rows should have equal widths: ${numericRowWidths.join(', ')}`);
+const returnKey = EXPR_LAYOUT.rows.at(-1).find((entry) => entry.label === '[return]');
 if (returnKey?.tooltip === 'new line') passed++;
-else failures.push('calculator keyboard should expose a bottom-row Return key');
-const backspaceKey = CALCULATOR_LAYOUT.rows.at(-1).find((entry) => entry.label === '[backspace]');
+else failures.push('expression keyboard should expose a bottom-row Return key');
+const backspaceKey = EXPR_LAYOUT.rows.at(-1).find((entry) => entry.label === '[backspace]');
 if (backspaceKey?.class?.split(/\s+/).includes('calc-backspace')) passed++;
-else failures.push('calculator Backspace should use the button-sized icon treatment');
-const boxedTemplateKeys = CALCULATOR_LAYOUT.rows.flat().filter((entry) => (
+else failures.push('expression Backspace should use the button-sized icon treatment');
+const boxedTemplateKeys = EXPR_LAYOUT.rows.flat().filter((entry) => (
   [
     '\\lfloor#?\\rfloor', '\\lceil#?\\rceil', '\\frac{#?}{#?}',
-    '#?^{#?}', '#?_{#?}', '\\sqrt{#?}',
+    '#?^{#?}', '#?^2', '#?_{#?}', '\\sqrt{#?}', '\\sqrt[#?]{#?}',
   ].includes(entry.latex) || entry.label === '|x|'
 ));
-if (boxedTemplateKeys.length === 7
+if (boxedTemplateKeys.length === 9
   && boxedTemplateKeys.every((entry) => entry.class?.split(/\s+/).includes('small'))) passed++;
-else failures.push('boxed calculator templates should use the smaller keycap scale');
-const functionKeyLabels = CALCULATOR_LAYOUT.rows.at(-2)
+else failures.push('boxed expression templates should use the smaller keycap scale');
+const functionKeyLabels = EXPR_LAYOUT.rows[1]
   .filter((entry) => entry.label)
   .map((entry) => entry.label);
-if (JSON.stringify(functionKeyLabels) === JSON.stringify(['sin', 'cos', 'tan', 'ln', 'log', 'conj'])) passed++;
-else failures.push(`calculator function row is incomplete: ${functionKeyLabels.join(', ')}`);
-if (KEYBOARD_LAYOUTS[0] === CALCULATOR_LAYOUT
-  && KEYBOARD_LAYOUTS[1] === SET_LAYOUT
-  && KEYBOARD_LAYOUTS[2] === ANALYSIS_LAYOUT
-  && KEYBOARD_LAYOUTS[3] === TOPOLOGY_LAYOUT
-  && KEYBOARD_LAYOUTS[4] === ALGEBRA_LAYOUT
-  && JSON.stringify(KEYBOARD_LAYOUTS.slice(5)) === JSON.stringify(['alphabetic', 'greek'])) passed++;
+if (JSON.stringify(functionKeyLabels) === JSON.stringify(['sin', 'cos', 'tan', 'ln', 'log', '|x|'])) passed++;
+else failures.push(`expression function row is incomplete: ${functionKeyLabels.join(', ')}`);
+
+// The two leading tabs split calculating from claiming. `:=` belongs to both,
+// because a definition is written on either kind of line.
+const exprKeys = EXPR_LAYOUT.rows.flat().map((entry) => entry.latex ?? entry.label);
+const relKeys = REL_LAYOUT.rows.flat().map((entry) => entry.latex ?? entry.label);
+if (['=', '\\ne', '<', '>', '\\le', '\\ge', '\\neg', '\\land', '\\lor',
+  '\\implies', '\\impliedby', '\\iff', '\\coloneq']
+  .every((expected) => relKeys.includes(expected))) passed++;
+else failures.push('relation tab is missing a relation or connective');
+if (['0', '7', 'i', '\\pi', 'e', '\\coloneq', '(', ')', '\\sqrt{#?}']
+  .every((expected) => exprKeys.includes(expected))) passed++;
+else failures.push('expression tab is missing a value key');
+// Deliberately absent from the expression tab.
+if (!exprKeys.includes(',') && !EXPR_LAYOUT.rows.flat().some((entry) => entry.command)) passed++;
+else failures.push('expression tab should carry no comma and no serif toggle');
+if (relKeys.filter((entry) => entry === '=').length === 1) passed++;
+else failures.push('relation tab should carry exactly one equals key');
+
+if (KEYBOARD_LAYOUTS[0] === EXPR_LAYOUT
+  && KEYBOARD_LAYOUTS[1] === REL_LAYOUT
+  && KEYBOARD_LAYOUTS[2] === SET_LAYOUT
+  && KEYBOARD_LAYOUTS[3] === ANALYSIS_LAYOUT
+  && KEYBOARD_LAYOUTS[4] === TOPOLOGY_LAYOUT
+  && KEYBOARD_LAYOUTS[5] === ALGEBRA_LAYOUT
+  && JSON.stringify(KEYBOARD_LAYOUTS.slice(6)) === JSON.stringify(['alphabetic', 'greek'])) passed++;
 else failures.push('redundant numeric and symbols keyboard tabs should be removed');
 const setKeys = SET_LAYOUT.rows.flat().map((entry) => entry.latex ?? entry.insert ?? entry.label);
 if (['\\in', '\\notin', '\\subseteq', '\\cup', '\\cap', '\\setminus', '\\varnothing', '\\times',

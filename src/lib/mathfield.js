@@ -126,47 +126,33 @@ const fn = (label, insert, tooltip) => ({ label, insert, tooltip, class: 'small'
  * A leading layer with the operators this app cares about, so none of them
  * require LaTeX knowledge. The stock layers stay available behind it.
  */
-export const CALCULATOR_LAYOUT = {
-  label: 'calc',
-  tooltip: 'Calculator operators',
+/** Bare on the keycap, spaced when inserted. Shared by the two leading tabs. */
+const defineKey = {
+  latex: '\\coloneq', insert: '\\mathrel{\\coloneq}', tooltip: 'define (:=)',
+};
+
+/**
+ * Everything that builds a value: the number pad, the constants, and the
+ * functions. No comma and no serif toggle — those belong to lines that are
+ * naming or arguing rather than calculating.
+ *
+ * The four numeric rows are deliberately the same total width so the digit
+ * columns line up; `test/core.test.mjs` holds that invariant.
+ */
+export const EXPR_LAYOUT = {
+  label: 'expr',
+  tooltip: 'Expressions',
   rows: [
-    [
-      key('='), key('\\ne'), key('<'), key('>'), key('\\le'), key('\\ge'),
-      // Bare on the keycap, spaced when inserted.
-      { latex: '\\coloneq', insert: '\\mathrel{\\coloneq}', tooltip: 'define (:=)' },
-      { class: 'separator w5' },
-      key('7'), key('8'), key('9'), key('\\div'),
-    ],
-    [
-      { latex: '\\neg', tooltip: 'logical not' },
-      { latex: '\\land', tooltip: 'logical and' },
-      { latex: '\\lor', tooltip: 'logical or' },
-      { class: 'separator' },
-      { latex: '\\implies', tooltip: 'implies' },
-      { latex: '\\impliedby', tooltip: 'is implied by' },
-      { latex: '\\iff', tooltip: 'is equivalent to' },
-      { class: 'separator w5' },
-      key('4'), key('5'), key('6'), key('\\times'),
-    ],
     [
       { latex: '\\lfloor#?\\rfloor', tooltip: 'floor', class: 'small' },
       { latex: '\\lceil#?\\rceil', tooltip: 'ceiling', class: 'small' },
       fn('rnd', '\\operatorname{rnd}(#?)', 'round to nearest'),
       fn('Re', '\\operatorname{Re}(#?)', 'real part'),
       fn('Im', '\\operatorname{Im}(#?)', 'imaginary part'),
-      key('i', { tooltip: 'imaginary unit' }), key('\\pi'),
+      fn('conj', '\\overline{#?}', 'complex conjugate'),
+      key('i', { tooltip: 'imaginary unit' }),
       { class: 'separator w5' },
-      key('1'), key('2'), key('3'), key('-'),
-    ],
-    [
-      { latex: '\\frac{#?}{#?}', class: 'small' },
-      { latex: '#?^{#?}', insert: '^{#?}', tooltip: 'power', class: 'small' },
-      { latex: '#?_{#?}', insert: '_{#?}', tooltip: 'subscript', class: 'small' },
-      { latex: '\\sqrt{#?}', class: 'small' },
-      fn('|x|', '\\left|#?\\right|', 'absolute value'),
-      key('e', { tooltip: "Euler's number" }),
-      { class: 'separator w15' },
-      key('0', { width: 2 }), key('.'), key('+'),
+      key('7'), key('8'), key('9'), key('\\div'),
     ],
     [
       fn('sin', '\\sin(#?)', 'sine'),
@@ -174,12 +160,59 @@ export const CALCULATOR_LAYOUT = {
       fn('tan', '\\tan(#?)', 'tangent'),
       fn('ln', '\\ln(#?)', 'natural logarithm'),
       fn('log', '\\log(#?)', 'logarithm'),
-      fn('conj', '\\overline{#?}', 'complex conjugate'),
-      { class: 'separator w40' },
-      { class: 'separator w15' },
+      fn('|x|', '\\left|#?\\right|', 'absolute value'),
+      key('\\pi'),
+      { class: 'separator w5' },
+      key('4'), key('5'), key('6'), key('\\times'),
     ],
     [
-      key('('), key(')'), key(','),
+      { latex: '\\frac{#?}{#?}', class: 'small' },
+      { latex: '#?^{#?}', insert: '^{#?}', tooltip: 'power', class: 'small' },
+      { latex: '#?^2', insert: '^2', tooltip: 'square', class: 'small' },
+      { latex: '\\sqrt{#?}', tooltip: 'square root', class: 'small' },
+      { latex: '\\sqrt[#?]{#?}', tooltip: 'radical', class: 'small' },
+      { latex: '#?_{#?}', insert: '_{#?}', tooltip: 'subscript', class: 'small' },
+      key('e', { tooltip: "Euler's number" }),
+      { class: 'separator w5' },
+      key('1'), key('2'), key('3'), key('-'),
+    ],
+    [
+      // Widened rather than padded with a separator: MathLive only defines
+      // w0/w3/w5/w15/w20/w40/w50, so a `w30` filler would silently collapse
+      // and take the digit columns out of alignment with it.
+      { ...defineKey, width: 2 },
+      key('(', { width: 2 }), key(')', { width: 2 }),
+      { class: 'separator w15' },
+      key('0', { width: 2 }), key('.'), key('+'),
+    ],
+    [
+      { label: '[left]', tooltip: 'move left' },
+      { label: '[right]', tooltip: 'move right' },
+      { label: '[backspace]', tooltip: 'backspace', class: 'action hide-shift calc-backspace' },
+      { label: '[return]', tooltip: 'new line' },
+    ],
+  ],
+};
+
+/** Everything that turns expressions into a claim: relations and connectives. */
+export const REL_LAYOUT = {
+  label: 'rel',
+  tooltip: 'Relations and logic',
+  rows: [
+    [
+      key('='), key('\\ne'), key('<'), key('>'), key('\\le'), key('\\ge'),
+    ],
+    [
+      { latex: '\\neg', tooltip: 'logical not' },
+      { latex: '\\land', tooltip: 'logical and' },
+      { latex: '\\lor', tooltip: 'logical or' },
+      { latex: '\\implies', tooltip: 'implies' },
+      { latex: '\\impliedby', tooltip: 'is implied by' },
+      { latex: '\\iff', tooltip: 'is equivalent to' },
+    ],
+    [
+      defineKey,
+      key('('), key(')'),
       {
         label: '<span style="font-family:Georgia,serif;font-size:0.9em">abc</span>',
         command: ['switchMode', 'text'],
@@ -406,9 +439,9 @@ export const ALGEBRA_LAYOUT = {
   ],
 };
 
-/** The custom calculator and set layers subsume MathLive's stock symbol tabs. */
+/** The custom layers subsume MathLive's stock numeric and symbol tabs. */
 export const KEYBOARD_LAYOUTS = [
-  CALCULATOR_LAYOUT, SET_LAYOUT, ANALYSIS_LAYOUT, TOPOLOGY_LAYOUT, ALGEBRA_LAYOUT,
+  EXPR_LAYOUT, REL_LAYOUT, SET_LAYOUT, ANALYSIS_LAYOUT, TOPOLOGY_LAYOUT, ALGEBRA_LAYOUT,
   'alphabetic', 'greek',
 ];
 

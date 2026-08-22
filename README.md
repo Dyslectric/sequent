@@ -41,6 +41,12 @@ npm run desktop:build
 `src-tauri/target/release/bundle/`. Tauri cannot cross-compile, so each
 platform is built on itself.
 
+Pushing a `v*` tag builds both from CI — Windows on `windows-latest`, Linux on
+`ubuntu-22.04` — and attaches every bundle to the GitHub release. The older
+Linux runner is deliberate: the binary links against the build machine's glibc,
+so building on 22.04 is what lets the result run on more than just the newest
+distributions.
+
 The desktop window is where **Ctrl+T** finally works: with no browser tab bar
 to claim it, the shortcut reaches the page.
 

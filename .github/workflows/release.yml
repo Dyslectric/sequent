@@ -1,0 +1,107 @@
+name: Release desktop builds
+
+on:
+  push:
+    tags: ['v*']
+  # Useful for proving the matrix still builds without cutting a tag; a manual
+  # run uploads artifacts but publishes no release.
+  workflow_dispatch:
+
+jobs:
+  desktop:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      # One platform failing should not throw away the other's artifacts.
+      fail-fast: false
+      matrix:
+        include:
+          - name: Windows
+            os: windows-latest
+            build: npm run desktop:build
+            artifacts: |
+              src-tauri/target/release/bundle/msi/*.msi
+              src-tauri/target/release/bundle/nsis/*-setup.exe
+
+          # 22.04 rather than latest, deliberately: the binary links against the
+          # build machine's glibc, so building on an older one is what lets the
+          # result run on more distributions than just the newest.
+          - name: Linux
+            os: ubuntu-22.04
+            build: npm run desktop:build:linux
+            artifacts: |
+              src-tauri/target/release/bundle/deb/*.deb
+              src-tauri/target/release/bundle/rpm/*.rpm
+              src-tauri/target/release/bundle/appimage/*.AppImage
+              src-tauri/target/release/bundle/tar/*.tar.gz
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Linux build dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            libxdo-dev \
+            libssl-dev \
+            build-essential \
+            file \
+            wget \
+            curl \
+            libfuse2
+        # libfuse2 is for the AppImage bundler, which mounts its tooling.
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri -> target
+          # Windows and Linux caches must not collide.
+          key: ${{ matrix.os }}
+
+      - run: npm ci --no-audit --no-fund
+
+      # The web bundle is what the desktop shell embeds, so a failure here is
+      # worth seeing before Rust spends several minutes compiling.
+      - run: npm test
+
+      - name: Build the desktop app
+        run: ${{ matrix.build }}
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sequent-${{ matrix.name }}
+          path: ${{ matrix.artifacts }}
+          if-no-files-found: error
+          retention-days: 14
+
+  release:
+    # Collect both platforms first and publish once, rather than having two jobs
+    # race to create the same release.
+    needs: desktop
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - run: ls -lhR artifacts
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: artifacts/**/*
+          generate_release_notes: true
+          fail_on_unmatched_files: true

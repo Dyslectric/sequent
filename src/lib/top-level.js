@@ -158,6 +158,29 @@ function hasTopLevelOperator(latex, tokens) {
   return splitTopLevelOperators(latex, tokens).operators.length > 0;
 }
 
+/**
+ * Split an argument list on its top-level commas.
+ *
+ * `splitTopLevel` cannot do this. It only tests for its token inside the
+ * backslash branch of the scanner, so a token that does not begin with a
+ * backslash never matches and the whole string comes back as one part —
+ * silently, which is how a Cartesian product inside a call's arguments went
+ * unrewritten for so long.
+ */
+export function splitTopLevelCommas(latex) {
+  const parts = [];
+  let rest = latex;
+  for (;;) {
+    const at = firstTopLevelComma(rest);
+    if (at < 0) {
+      parts.push(rest);
+      return parts;
+    }
+    parts.push(rest.slice(0, at));
+    rest = rest.slice(at + 1);
+  }
+}
+
 function firstTopLevelComma(latex) {
   let braceDepth = 0;
   let groupDepth = 0;

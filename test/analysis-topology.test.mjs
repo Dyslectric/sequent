@@ -75,6 +75,25 @@ check('plane is not compact',
     '\\rho:=\\mathsf{Prod}(\\tau,\\mathbb{R},\\tau,\\mathbb{R})',
     '\\mathsf{Cpt}(\\rho,\\mathbb{R}\\times\\mathbb{R})'], exactFalse);
 
+// A Cartesian product of user-defined set names inside a predicate call. The
+// `\times` here is not top-level anywhere the splitting looks — it sits inside
+// the call's parentheses — so the arguments have to be descended into. `ℝ × ℝ`
+// never exercised this, because Compute Engine understands products of its own
+// standard sets natively.
+const CLOSED_BALL = [
+  '\\tau:=\\mathsf{Met}(\\mathbb{R})',
+  'K:=\\operatorname{closedball}(0,1)',
+  '\\sigma:=\\mathsf{Sub}(\\tau,\\mathbb{R},K)',
+  '\\rho:=\\mathsf{Prod}(\\sigma,K,\\sigma,K)',
+];
+check('product of defined sets is a topology',
+  [...CLOSED_BALL, '\\mathsf{Top}(\\rho,K\\times K)'], proved);
+check('closed ball squared is compact',
+  [...CLOSED_BALL, '\\mathsf{Cpt}(\\rho,K\\times K)'], proved);
+check('product of defined finite sets',
+  ['E:=\\{1,2\\}', 'F:=\\{3\\}', '\\tau:=\\mathsf{Disc}(E\\times F)',
+    '\\mathsf{Top}(\\tau,E\\times F)'], proved);
+
 // "Not known to be finite" is not "infinite": a symbolic carrier may well be
 // finite, so a discrete topology on one is undecided, never non-compact.
 check('symbolic carrier is undecided',

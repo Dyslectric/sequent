@@ -109,6 +109,18 @@ check('undefined name has no count', ['\\operatorname{card}(S)=1'], unknown);
 check('infinite comparison undecided',
   ['\\operatorname{card}(\\mathbb{N})<\\operatorname{card}(\\mathbb{R})'], unknown);
 
+// Compute Engine leaves a call it cannot type as a bare symbol, so `card(6)`
+// becomes `6 · SetCardinality` — and the exact sign chart will then cheerfully
+// disprove `6·S = 1` with a witness naming a head nobody typed. Every real
+// name is interned as `Id<n>`, so any other free symbol is one of these, and
+// the line is answered by nobody.
+check('cardinality of a number', ['\\operatorname{card}(6)=1'], unknown);
+check('cardinality of an expression', ['\\operatorname{card}(2\\times3)=1'], unknown);
+check('cardinality of a bare variable', ['\\operatorname{card}(x)=1'], unknown);
+// Multiplication inside a call still means multiplication.
+check('numeric product in a call', ['f(x):=x+1', 'f(2\\times3)=7'], proved);
+check('numeric product alone', ['2\\times3=6'], proved);
+
 // `|x|` is still absolute value and must not be read as a count.
 check('absolute value untouched', ['\\left|-3\\right|=3'], proved);
 

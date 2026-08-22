@@ -17,6 +17,7 @@ import {
 import {
   indexOfTopLevel,
   splitTopLevel,
+  splitTopLevelCommas,
   splitTopLevelOperators,
   splitTopLevelQuantifierScope,
 } from './top-level.js';
@@ -147,6 +148,29 @@ function wrappedPowerSetCall(latex) {
   };
 }
 
+/**
+ * Any `\operatorname{Name}(...)` spanning the whole expression.
+ *
+ * A Cartesian product inside a call's arguments is not top-level anywhere the
+ * splitting looks — `Cpt(τ, K × K)` has no top-level `\times`, because the one
+ * it has is inside the parentheses. Without descending into the arguments the
+ * product reaches Compute Engine as multiplication and the line dies on a type
+ * error. `ℝ × ℝ` escaped this only because Compute Engine understands products
+ * of its own standard sets natively.
+ */
+function wrappedCall(latex) {
+  const source = latex.trim();
+  const head = /^\\operatorname\{[A-Za-z][A-Za-z0-9]*\}\s*/.exec(source)?.[0];
+  if (!head) return null;
+  const rest = source.slice(head.length);
+  const sized = rest.startsWith('\\left(');
+  const prefix = sized ? `${head}\\left(` : `${head}(`;
+  const suffix = sized ? '\\right)' : ')';
+  if (!source.startsWith(prefix) || !source.endsWith(suffix)) return null;
+  const inner = source.slice(prefix.length, -suffix.length);
+  return inner.length === 0 ? null : { prefix, inner, suffix };
+}
+
 function wrappedSetBuilder(latex) {
   const source = latex.trim();
   for (const [prefix, suffix] of [
@@ -259,6 +283,19 @@ function rewriteCartesianProductSyntax(latex, definitions, forceSet = false) {
     return `${builder.prefix}${pieces.map((piece) => (
       rewriteCartesianProductSyntax(piece, definitions, false)
     )).join('\\mid')}${builder.suffix}`;
+  }
+
+  // Descend into a call's arguments. Deliberately without forcing set context:
+  // an argument is rewritten only when its factors are already known sets, so
+  // `Cpt(τ, K × K)` becomes a product while `f(2 × 3)` stays multiplication.
+  const call = wrappedCall(source);
+  if (call) {
+    const args = splitTopLevelCommas(call.inner);
+    if (args.length > 1) {
+      return `${call.prefix}${args.map((argument) => (
+        rewriteCartesianProductSyntax(argument, definitions, false)
+      )).join(',')}${call.suffix}`;
+    }
   }
 
   return rewriteCartesianProductOperand(source, definitions, forceSet);
@@ -432,6 +469,25 @@ function hasOpenSummation(expr) {
 function hasCardinality(expr) {
   try {
     return /"SetCardinality"/.test(JSON.stringify(expr.json));
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * An unknown that is not an interned user name.
+ *
+ * Every name a reader can write is interned as `Id<n>` before parsing, so any
+ * other free symbol in a statement is one of our own builtin heads that
+ * Compute Engine declined to read as a call and left as a bare symbol —
+ * `card(6)` becomes `6 · SetCardinality`, exactly as `\frac{d}{dx}` becomes
+ * `d / (d·x)`. Sampling such a symbol produces a counterexample naming a
+ * variable nobody typed, which is the one kind of wrong answer this app must
+ * not give. The general rule costs nothing and catches the next one too.
+ */
+function hasDegradedBuiltin(expr) {
+  try {
+    return expr.unknowns.some((name) => !ID_RE.test(name));
   } catch {
     return false;
   }
@@ -850,7 +906,18 @@ export class Sheet {
     const complex = JSON.stringify(expr.json).includes('Complex');
     const boundSymbols = collectBoundSymbols(expr);
     const domains = collectDomainRestrictions(expr);
-    const openSummation = hasOpenSummation(expr) || hasCardinality(expr);
+    // A degraded builtin is not a statement this app can answer at all, and
+    // every pass below — including the exact sign chart, which happily decides
+    // `6·SetCardinality = 1` — would answer it anyway. Refuse the line instead.
+    // Undecided rather than an error: `card(S)` for a name that is simply not
+    // defined yet is an honest unknown, not a malformed line. What matters is
+    // returning before any pass runs, since each of them would answer.
+    if (hasDegradedBuiltin(expr)) {
+      return {
+        kind: 'truth', value: null, method: 'undecided', samples: 0, counterexample: null,
+      };
+    }
+    const refuseSampling = hasOpenSummation(expr) || hasCardinality(expr);
     let decidedExpr = expr;
     let verdict;
     let analysis = null;
@@ -883,7 +950,7 @@ export class Sheet {
       verdict = decideStatement(this.ce, decidedExpr, {
         complex,
         // An unresolved set variable must never receive a numeric test value.
-        allowSampling: !analysis && !lowered.unresolvedSets && !openSummation,
+        allowSampling: !analysis && !lowered.unresolvedSets && !refuseSampling,
         domains,
         // Nor may an opaque set/domain atom be accepted from Compute Engine's
         // eager evaluation; the symbolic tautology prover still runs below it.
@@ -895,7 +962,7 @@ export class Sheet {
     } else {
       verdict = decideStatement(this.ce, decidedExpr, {
         complex,
-        allowSampling: !analysis && !openSummation,
+        allowSampling: !analysis && !refuseSampling,
         allowDirectEvaluation: !analysis?.unsafeEvaluation && !analysis?.unresolvedAnalysis,
         realSymbols: analysis?.realSymbols,
         domains,

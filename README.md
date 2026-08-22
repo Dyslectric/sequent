@@ -20,7 +20,7 @@ npm install
 npm run dev
 ```
 
-`npm test` runs the evaluation-core tests (4,108 cases, no browser needed).
+`npm test` runs the evaluation-core tests (4,116 cases, no browser needed).
 
 `npm run fuzz` runs deterministic property fuzzing over domain-scoped chain
 layout, formatting round trips, incomplete editor input, and exact equality,

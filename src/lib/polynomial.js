@@ -354,6 +354,10 @@ export function proveRelationBySign(ce, relation) {
     }
   }
 
+  // Preserve useful syntax such as `(xy + z)^2`: expansion turns an obvious
+  // square into mixed-sign terms and throws away its structural certificate.
+  if (satisfiesSign(kind, structuralSign(diff))) return true;
+
   let expanded = diff;
   try {
     expanded = ce.box(['Expand', diff]).evaluate();

@@ -6,8 +6,9 @@ against everything defined above it and answered with a verdict — the shape of
 sequent, `Γ ⊨ ∀x̄. φ`, which is where the name comes from.
 
 The main page opens as a blank sheet; open `#demo` (or use the **Demo** link in
-the header) for a curated example sheet. The blank and demo sheets are saved
-separately.
+the header) for a curated example sheet. The working sheet is saved locally and
+serialized live into its `#sheet=...` URL; copying the address copies the sheet.
+The demo always reloads from its curated defaults.
 
 ```bash
 npm install
@@ -17,7 +18,7 @@ npm install
 npm run dev
 ```
 
-`npm test` runs the evaluation-core tests (211 cases, no browser needed).
+`npm test` runs the evaluation-core tests (921 cases, no browser needed).
 `npm run build` emits a static bundle to `dist/` — fonts included, no network at runtime.
 
 ## Desktop
@@ -184,12 +185,15 @@ visitor.
 | equivalence of relations | `true` / `false` — `x > 2 ⟺ 2x > 4` → true |
 | implication of relations | `true` / `false` — `x² = 4 ⟹ x = 2` → false, counterexample `x = -2` |
 | logical proposition | `true` / `false` — `x > 0 ∨ x < 0 ⟺ x ≠ 0` → true |
+| set expression | its exact set value — `{1,2,3} ∪ {3,4}` → `{1,2,3,4}` |
+| set proposition | `true` / `false` — `2 ∈ {1,2,3}` and `{1,2} ⊆ {1,2,3}` → true |
 | constant definition | no value, just a confirmation badge |
 | function definition | no value, just a confirmation badge |
+| set definition | no value, just a confirmation badge |
 
 Numbers work over ℕ/ℤ/ℚ/ℝ/ℂ. Rationals and surds stay exact (`√8` → `2√2`); the
 **Decimal** toggle switches to decimal output. `i` is the imaginary unit, and
-`floor`, `ceil`, `round`, `Re` and `Im` are available (type their names, or use
+`floor`, `ceil`, `rnd`, `Re` and `Im` are available (type their names, or use
 the on-screen keys, or write `⌊ ⌋` / `⌈ ⌉`).
 
 ## Typing
@@ -240,6 +244,43 @@ above it, and everything is recomputed top-to-bottom on every edit.
 Once a name is defined, expressions using it become numeric. Where an
 undefined name remains, the line stays algebraic and reports which name is missing.
 
+Definitions may also hold propositions or return propositions:
+
+```
+P(x) := x > 0                   proposition-valued function
+P(3) ∧ ¬P(-1)                  true
+T := 2 < 3                     propositional constant
+T ∧ P(1)                       true
+```
+
+Predicate bodies may use the full logical language, including `∧`, `∨`, `¬`,
+`⟹`, and `⟺`. A predicate call or propositional constant works both as a
+standalone truth-valued line and as an operand inside a larger proposition.
+
+### Sets
+
+Finite sets and numeric set-builders are first-class values and may be named:
+
+```
+A := {1, 2, 3}
+S := {x ∈ ℝ | x² < 4}
+A ∪ {3, 4}                     {1, 2, 3, 4}
+2 ∈ A ∧ 4 ∉ A                 true
+S = {x ∈ ℝ | -2 < x ∧ x < 2} true, proved
+```
+
+The set keyboard supplies `∈`, `∉`, subset/superset relations, `∪`, `∩`, set
+difference, finite-set and set-builder templates, `∅`, and the standard number
+sets `ℕ`, `ℤ`, `ℚ`, `ℝ`, and `ℂ`. Universal and existential propositions over
+finite sets are evaluated exactly; restricted universal propositions such as
+`∀x ∈ S, P(x)` are lowered to implication. Set-builder membership, subset, and
+equality become arithmetic propositions, so they inherit the polynomial proof
+procedures below.
+
+Extensional set algebra is also proved symbolically. For arbitrary sets, for
+example, `A ∪ ∅ = A`, `A ⊆ B ∧ B ⊆ C ⟹ A ⊆ C`, and
+`A = B ⟺ A ⊆ B ∧ B ⊆ A` are proofs rather than sampled guesses.
+
 ### Chains
 
 `a = b = c`, `a < b ≤ c`, and `x > 2 ⟺ 2x > 4 ⟺ 3x > 6` chain
@@ -275,6 +316,13 @@ Statements with free variables go through three passes:
    is asked to decide it outright, then each relation is normalised to `p ▷ 0`
    and the connective is attacked directly:
 
+   - **Sets.** Concrete finite set operations and quantifiers are evaluated
+     exactly. Membership in a set-builder substitutes the candidate into its
+     predicate; subset and equality are reduced extensionally to implication
+     and equivalence. Boolean set-algebra identities are then proved as
+     tautologies, while numeric predicates continue through the arithmetic
+     procedures below.
+
    - **Affine consequents.** If the consequent's polynomial is `c·p + k` for
      constants `c` and `k`, the implication reduces to a sign test on `c` and
      `k`, from the interval `q` covers while the antecedent holds. This proves
@@ -284,6 +332,12 @@ Statements with free variables go through three passes:
    - **Multiples.** `p = 0 ⟹ q = 0` when `p` divides `q` exactly, which proves
      `x = 2 ⟹ x² = 4`. The quotient must come back free of division by an
      unknown, or the identity would be vacuous.
+   - **Powers and sign-preserving factors.** Integer powers preserve zero and
+     nonzero sets; odd powers preserve sign; positive powers of a positive
+     expression stay positive. Multiplication by a polynomial certified to be
+     everywhere nonzero preserves equation zero sets, and an everywhere-positive
+     factor preserves strict and non-strict inequalities. These certificates
+     work for multivariable polynomials without expanding them.
    - **Exact polynomial sign charts.** For single-variable polynomials with
      rational coefficients, Sturm sequences isolate every real root using
      exact integer/rational arithmetic. Testing each root and each interval
@@ -339,6 +393,7 @@ Sampling is deterministic, so the same sheet always gives the same verdict.
 | `src/lib/identifiers.js` | rewrites user names to parser-safe symbols, and back |
 | `src/lib/engine.js` | classifies each line, applies definitions, formats results |
 | `src/lib/decide.js` | the symbolic + sampling decision procedure |
+| `src/lib/sets.js` | set values, set-builders, extensional lowering, finite set decisions |
 | `src/lib/polynomial.js` | polynomial sign certificates and exact sign-chart routing |
 | `src/lib/rational-polynomial.js` | exact rational arithmetic, Sturm root isolation, sign charts |
 | `src/lib/top-level.js` | brace-aware operator splitting, and the multiline chain layout |
@@ -362,8 +417,20 @@ applied to arguments — before parsing, and rewritten back for display.
 - The prover is complete for single-variable polynomial implications and
   equivalences when all coefficients are rational (up to its degree and
   resource limits), as well as for linear relations in several variables.
-  Irrational-coefficient and multivariable nonlinear cases use sound shape
-  certificates where available and otherwise fall back to sampling.
+  Multivariable nonlinear cases additionally recognize exact scaling,
+  divisibility, integer-power sign/zero-set transformations, globally nonzero
+  equation factors, globally positive inequality factors, and structural sign
+  certificates. Other cases fall back to sampling.
+- The supported set fragment is extensional rather than a general axiomatic set
+  theory: finite sets, standard numeric domains, numeric set-builders, ordinary
+  set operations, membership, subset/superset, equality, and finite/restricted
+  quantifiers. General ZF constructions, nested arbitrary sets, power sets,
+  cardinality proofs, and unrestricted existential proofs are not currently a
+  decision procedure. Unsupported symbolic set claims report `undecided`; they
+  are never certified by numeric sampling.
 - Inside the serif channel `}` exits text mode, so a literal `}` cannot be typed
   there.
-- The sheet is stored in `localStorage`; it is not shared between browsers.
+- The working sheet is stored in `localStorage`, and its lines plus Exact/Decimal
+  mode are mirrored into the URL fragment for sharing or reloading elsewhere.
+  Theme and keyboard preferences remain local. As with any share link, anyone
+  given the URL can read the sheet content encoded in it.

@@ -11,6 +11,7 @@ import {
   getTopLevelChainCheckpoints,
   isFormattedTopLevelChain,
 } from './lib/top-level.js';
+import { parseSheetStateHash, serializeSheetState } from './lib/url-state.js';
 
 // Fonts arrive through `mathlive/static.css`, which Vite bundles; stop MathLive
 // from also fetching them (and its sounds) at runtime.
@@ -20,6 +21,15 @@ MathfieldElement.soundsDirectory = null;
 const STORAGE_PREFIX = 'sequent/v2';
 const LEGACY_STORAGE_PREFIX = 'expression-calculator/v2';
 
+const DEMO_ADDITIONS = [
+  'x+y=0\\iff x+y+z=0',
+  '(x+y-z)^2=0\\iff x+y-z=0',
+  'xy+z-2=0\\implies(xy+z-2)(x^2+y^2+1)=0',
+  'x^2+xy-z>2\\implies2(x^2+xy-z)>3',
+  'xy+yz+zx\\ge0\\iff(xy+yz+zx)^5\\ge0',
+  'x+y-z>0\\iff(x+y-z)(x^2+y^2+z^2+1)>0',
+];
+
 const DEMO_LINES = [
   '\\frac{1}{3}+\\frac{1}{6}',
   '\\sqrt{8}',
@@ -28,11 +38,22 @@ const DEMO_LINES = [
   '\\text{gravity}=9.81',
   'f(x)=x^2+1',
   'f(3)=10',
+  'P(x):=x>0',
+  'P(3)\\land\\neg P(-1)',
+  'T:=2<3',
+  'T\\land P(1)',
+  'A:=\\{1,2,3\\}',
+  'A\\cup\\{3,4\\}',
+  '2\\in A\\land4\\notin A',
+  'S:=\\{x\\in\\mathbb{R}\\mid x^2<4\\}',
+  '1\\in S\\land3\\notin S',
+  'S=\\{x\\in\\mathbb{R}\\mid -2<x\\land x<2\\}',
   '(x+1)^2=x^2+2x+1=x^2+1+2x',
   'x<x+1\\le x+2',
   'x^2-1=0\\iff(x-1)(x+1)=0',
   'x>3\\implies x>2\\implies x>1',
   'x>0\\land x<2\\implies x^2<4',
+  ...DEMO_ADDITIONS,
   '\\neg(x>0\\lor x<-1)\\iff x\\le0\\land x\\ge-1',
   'x^2>0',
   '',
@@ -86,7 +107,9 @@ function isBlankSheet(raw) {
  */
 function migrateLegacyStorage() {
   try {
-    for (const page of ['sheet', 'demo']) {
+    // Demo content is curated and deliberately rebuilt on every load; only a
+    // user's working sheet needs content migration.
+    for (const page of ['sheet']) {
       const legacy = localStorage.getItem(`${LEGACY_STORAGE_PREFIX}/${page}`);
       if (!isBlankSheet(legacy) && isBlankSheet(localStorage.getItem(storageKey(page)))) {
         localStorage.setItem(storageKey(page), legacy);
@@ -101,24 +124,38 @@ function load(page = pageFromHash()) {
     stored = JSON.parse(localStorage.getItem(storageKey(page)) ?? 'null');
   } catch { /* corrupt or unavailable; fall back to defaults */ }
 
-  const savedLines = Array.isArray(stored?.lines) && stored.lines.length ? stored.lines : null;
+  const urlState = page === 'sheet' ? parseSheetStateHash(location.hash) : null;
+  const savedLines = urlState?.lines
+    ?? (page !== 'demo' && Array.isArray(stored?.lines) && stored.lines.length ? stored.lines : null);
   state.page = page;
-  state.lines = savedLines ?? (page === 'demo' ? [...DEMO_LINES] : ['']);
-  state.display = stored?.display === 'decimal' ? 'decimal' : 'exact';
+  state.lines = page === 'demo' ? [...DEMO_LINES] : (savedLines ?? ['']);
+  state.display = urlState?.display ?? (stored?.display === 'decimal' ? 'decimal' : 'exact');
   state.theme = stored?.theme
     ?? (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
   state.keyboardCollapsed = stored?.keyboardCollapsed === true;
 }
 
-function save() {
+function syncSheetUrl() {
+  if (state.page !== 'sheet') return;
+  const hash = serializeSheetState(state);
+  if (location.hash === hash) return;
+  history.replaceState(null, '', `${location.pathname}${location.search}${hash}`);
+}
+
+function save(options = {}) {
   try {
-    localStorage.setItem(storageKey(state.page), JSON.stringify({
-      lines: state.lines,
+    const saved = {
       display: state.display,
       theme: state.theme,
       keyboardCollapsed: state.keyboardCollapsed,
-    }));
+    };
+    // The demo is a stable showcase, not a second working document. Preserve
+    // its UI preferences, but rebuild its lines from DEMO_LINES on every load.
+    if (state.page !== 'demo') saved.lines = state.lines;
+    localStorage.setItem(storageKey(state.page), JSON.stringify(saved));
   } catch { /* private mode; the sheet just will not persist */ }
+  // URL state is independent of localStorage and still works in private mode.
+  if (options.updateUrl !== false) syncSheetUrl();
 }
 
 /* ----------------------------- export / import ---------------------------- */
@@ -364,6 +401,18 @@ function renderResult(el, result) {
       return;
     }
 
+    case 'set': {
+      const names = result.undefinedNames;
+      el.innerHTML = [
+        names.length ? `<span class="result-note">undefined: ${escapeHtml(names.join(', '))}</span>` : '',
+        `<span class="result-primary result-value">= ${math(result.latex)}</span>`,
+      ].join('');
+      el.title = names.length
+        ? `Set expression still depends on ${names.join(', ')}.`
+        : 'Exact set value.';
+      return;
+    }
+
     case 'truth': {
       const note = describeVerdict(result);
       const pill = result.value === true ? 'pill-true' : result.value === false ? 'pill-false' : 'pill-unknown';
@@ -379,7 +428,9 @@ function renderResult(el, result) {
     case 'definition': {
       // Definitions have no value; the badge just confirms the name landed.
       // Detail (arity, body) goes in the tooltip so narrow rows stay readable.
-      const label = `${result.name} defined`;
+      const label = result.what === 'set'
+        ? `${result.name} set defined`
+        : `${result.name} defined`;
       el.innerHTML = `<span class="pill pill-definition">${escapeHtml(label)}</span>`;
       el.title = result.what === 'function'
         ? `${result.name}(${result.paramsLatex.join(', ')}) defined as ${result.valueLatex}`
@@ -613,22 +664,30 @@ function renderKeyboardToggle(button) {
 
 function renderPageChrome() {
   const demo = state.page === 'demo';
-  const pageLink = document.getElementById('page-link');
-  pageLink.href = demo ? `${location.pathname}${location.search}` : '#demo';
-  pageLink.textContent = demo ? 'Blank sheet' : 'Demo';
-  pageLink.title = demo ? 'Open a blank sheet' : 'Open the example sheet';
+  const sheetLink = document.getElementById('sheet-link');
+  const demoLink = document.getElementById('demo-link');
+  sheetLink.href = `${location.pathname}${location.search}`;
+  sheetLink.classList.toggle('is-active', !demo);
+  demoLink.classList.toggle('is-active', demo);
+  if (demo) {
+    demoLink.setAttribute('aria-current', 'page');
+    sheetLink.removeAttribute('aria-current');
+  } else {
+    sheetLink.setAttribute('aria-current', 'page');
+    demoLink.removeAttribute('aria-current');
+  }
   document.title = demo ? 'Sequent — Demo' : 'Sequent';
 }
 
-function setDisplay(mode) {
+function setDisplay(mode, options = {}) {
   state.display = mode;
   for (const button of document.querySelectorAll('[data-display]')) {
     button.classList.toggle('is-active', button.dataset.display === mode);
   }
-  recompute();
+  if (options.recompute !== false) recompute();
 }
 
-function buildSheet(lines) {
+function buildSheet(lines, options = {}) {
   sheetEl.innerHTML = '';
   rows.length = 0;
   state.lines = [...lines];
@@ -639,7 +698,7 @@ function buildSheet(lines) {
     mountRow(entry);
   });
   renumber();
-  recompute();
+  if (options.recompute !== false) scheduleRecompute();
 }
 
 function focusPageEntry() {
@@ -656,8 +715,12 @@ function init() {
   load();
   applyTheme();
   renderPageChrome();
-  buildSheet(state.lines);
-  setDisplay(state.display);
+  buildSheet(state.lines, { recompute: false });
+  setDisplay(state.display, { recompute: false });
+  // Give the browser a chance to paint the mounted MathLive rows before doing
+  // the one full-sheet evaluation. Previously startup evaluated twice and
+  // blocked both the rows and their results from appearing.
+  scheduleRecompute();
   const keyboardController = setupVirtualKeyboard(dockEl, {
     collapsed: state.keyboardCollapsed,
   });
@@ -668,12 +731,15 @@ function init() {
     const nextPage = pageFromHash();
     if (nextPage === state.page) return;
 
-    save();
+    // The new hash may itself contain a shared sheet. Persist the old page
+    // locally without replacing that incoming URL before it can be loaded.
+    save({ updateUrl: false });
     load(nextPage);
     applyTheme();
     renderPageChrome();
-    buildSheet(state.lines);
-    setDisplay(state.display);
+    buildSheet(state.lines, { recompute: false });
+    setDisplay(state.display, { recompute: false });
+    scheduleRecompute();
     keyboardController?.setCollapsed(state.keyboardCollapsed);
     renderKeyboardToggle(keyboardToggle);
     focusPageEntry();

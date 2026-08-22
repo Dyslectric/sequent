@@ -8,7 +8,7 @@ export const INLINE_SHORTCUTS = {
   floor: '\\lfloor#?\\rfloor',
   ceil: '\\lceil#?\\rceil',
   ceiling: '\\lceil#?\\rceil',
-  round: '\\operatorname{round}\\left(#?\\right)',
+  rnd: '\\operatorname{rnd}\\left(#?\\right)',
   Re: '\\operatorname{Re}\\left(#?\\right)',
   Im: '\\operatorname{Im}\\left(#?\\right)',
   conj: '\\operatorname{conj}\\left(#?\\right)',
@@ -95,7 +95,7 @@ export const CALCULATOR_LAYOUT = {
       { latex: '\\neg', tooltip: 'logical not' },
       { latex: '\\land', tooltip: 'logical and' },
       { latex: '\\lor', tooltip: 'logical or' },
-      { class: 'separator w5' },
+      { class: 'separator' },
       { latex: '\\implies', tooltip: 'implies' },
       { latex: '\\impliedby', tooltip: 'is implied by' },
       { latex: '\\iff', tooltip: 'is equivalent to' },
@@ -103,9 +103,9 @@ export const CALCULATOR_LAYOUT = {
       key('4'), key('5'), key('6'), key('\\times'),
     ],
     [
-      { latex: '\\lfloor#?\\rfloor', tooltip: 'floor' },
-      { latex: '\\lceil#?\\rceil', tooltip: 'ceiling' },
-      fn('round', '\\operatorname{round}(#?)', 'round to nearest'),
+      { latex: '\\lfloor#?\\rfloor', tooltip: 'floor', class: 'small' },
+      { latex: '\\lceil#?\\rceil', tooltip: 'ceiling', class: 'small' },
+      fn('rnd', '\\operatorname{rnd}(#?)', 'round to nearest'),
       fn('Re', '\\operatorname{Re}(#?)', 'real part'),
       fn('Im', '\\operatorname{Im}(#?)', 'imaginary part'),
       key('i', { tooltip: 'imaginary unit' }), key('\\pi'),
@@ -113,14 +113,23 @@ export const CALCULATOR_LAYOUT = {
       key('1'), key('2'), key('3'), key('-'),
     ],
     [
-      { latex: '\\frac{#?}{#?}' },
-      { latex: '#?^{#?}', insert: '^{#?}', tooltip: 'power' },
-      { latex: '#?_{#?}', insert: '_{#?}', tooltip: 'subscript' },
-      { latex: '\\sqrt{#?}' },
+      { latex: '\\frac{#?}{#?}', class: 'small' },
+      { latex: '#?^{#?}', insert: '^{#?}', tooltip: 'power', class: 'small' },
+      { latex: '#?_{#?}', insert: '_{#?}', tooltip: 'subscript', class: 'small' },
+      { latex: '\\sqrt{#?}', class: 'small' },
       fn('|x|', '\\left|#?\\right|', 'absolute value'),
       key('e', { tooltip: "Euler's number" }),
-      { class: 'separator w5' },
-      key('0'), key('.'), key('+'),
+      { class: 'separator w15' },
+      key('0', { width: 2 }), key('.'), key('+'),
+    ],
+    [
+      fn('sin', '\\sin(#?)', 'sine'),
+      fn('cos', '\\cos(#?)', 'cosine'),
+      fn('tan', '\\tan(#?)', 'tangent'),
+      fn('ln', '\\ln(#?)', 'natural logarithm'),
+      fn('log', '\\log(#?)', 'logarithm'),
+      { class: 'separator w50' },
+      { class: 'separator w15' },
     ],
     [
       key('('), key(')'), key(','),
@@ -131,10 +140,45 @@ export const CALCULATOR_LAYOUT = {
       },
       { label: '[left]', tooltip: 'move left' },
       { label: '[right]', tooltip: 'move right' },
-      { label: '[backspace]', tooltip: 'backspace' },
+      { label: '[backspace]', tooltip: 'backspace', class: 'action hide-shift calc-backspace' },
+      { label: '[return]', tooltip: 'new line' },
     ],
   ],
 };
+
+/** Set notation kept focused enough to be useful on a narrow calculator. */
+export const SET_LAYOUT = {
+  label: '{∈}',
+  tooltip: 'Sets',
+  rows: [
+    [
+      key('\\in'), key('\\notin'), key('\\subset'), key('\\subseteq'),
+      key('\\supset'), key('\\supseteq'),
+    ],
+    [
+      key('\\cup'), key('\\cap'), key('\\setminus'), key('\\varnothing'),
+      key('\\left\\{#?\\right\\}', { class: 'small', tooltip: 'finite set' }),
+      key('\\left\\{#?\\mid #?\\right\\}', { class: 'small', tooltip: 'set builder' }),
+    ],
+    [
+      key('\\mathbb{N}'),
+      key('\\mathbb{Z}'),
+      key('\\mathbb{Q}'),
+      key('\\mathbb{R}'),
+      key('\\mathbb{C}'),
+    ],
+    [
+      key('('), key(')'), key(','),
+      { label: '[left]', tooltip: 'move left' },
+      { label: '[right]', tooltip: 'move right' },
+      { label: '[backspace]', tooltip: 'backspace', class: 'action hide-shift calc-backspace' },
+      { label: '[return]', tooltip: 'new line' },
+    ],
+  ],
+};
+
+/** The custom calculator and set layers subsume MathLive's stock symbol tabs. */
+export const KEYBOARD_LAYOUTS = [CALCULATOR_LAYOUT, SET_LAYOUT, 'alphabetic', 'greek'];
 
 /**
  * Dock the shared virtual keyboard inside `container` and keep it there.
@@ -145,7 +189,7 @@ export function setupVirtualKeyboard(container, options = {}) {
   if (!keyboard) return null;
 
   keyboard.container = container;
-  keyboard.layouts = [CALCULATOR_LAYOUT, 'numeric', 'symbols', 'alphabetic', 'greek'];
+  keyboard.layouts = KEYBOARD_LAYOUTS;
   keyboard.show();
 
   // MathLive's root is exactly as tall as its container and clips overflow,
@@ -166,10 +210,13 @@ export function setupVirtualKeyboard(container, options = {}) {
     }
     renderAttempts = 0;
 
-    // `offsetTop + offsetHeight` is independent of the backdrop's bottom
-    // anchoring. Using viewport coordinates here would include the dock height
-    // itself and cause the dock to grow on every observation.
-    const required = Math.ceil(plate.offsetTop + plate.offsetHeight);
+    // The backdrop is bottom-anchored, and our CSS removes MathLive's duplicate
+    // plate inset. Preserve the backdrop's intended top padding while sizing
+    // the root exactly to the visible plate, without a feedback loop through
+    // viewport coordinates.
+    const backdrop = plate.parentElement;
+    const topInset = Number.parseFloat(getComputedStyle(backdrop).paddingTop) || 0;
+    const required = Math.ceil(topInset + plate.offsetHeight);
     if (required > 0) container.style.height = `${required}px`;
 
     if (plate !== observedPlate && globalThis.ResizeObserver) {

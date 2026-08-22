@@ -115,7 +115,8 @@ body {
   background: var(--surface);
 }
 
-.segmented button {
+.segmented button,
+.segmented a {
   appearance: none;
   border: 0;
   background: transparent;
@@ -124,13 +125,20 @@ body {
   font-size: 13px;
   padding: 5px 11px;
   cursor: pointer;
+  text-decoration: none;
 }
 
-.segmented button.is-active {
+.segmented button.is-active,
+.segmented a.is-active {
   background: var(--bg);
   color: var(--text);
   font-weight: 600;
   box-shadow: inset 0 0 0 1px var(--border);
+}
+
+.page-switcher a:not(.is-active):hover {
+  background: var(--surface-hover);
+  color: var(--text);
 }
 
 .icon-button {
@@ -455,6 +463,29 @@ body {
   overflow: hidden;
   transition: height 180ms ease;
 }
+
+/* In an embedded keyboard MathLive's backdrop already supplies the top inset.
+   Its plate repeats that inset, which leaves the last 5px outside the clipped
+   root. Keep the backdrop spacing and let the plate fill it exactly. */
+.keyboard-dock .MLK__plate { top: 0; }
+
+/* The stock Backspace key reserves opposite corners for Backspace and its
+   shifted clear action. The calc layer has no Shift key, so centre its primary
+   glyph and give it the same 24px scale used for MathLive's larger icons. */
+.keyboard-dock .calc-backspace {
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+}
+
+.keyboard-dock .calc-backspace > .svg-glyph {
+  width: var(--_keycap-glyph-size-lg);
+  height: var(--_keycap-glyph-size-lg);
+  min-height: var(--_keycap-glyph-size-lg);
+  margin: 0;
+}
+
+.keyboard-dock .calc-backspace > .MLK__shift { display: none; }
 
 .keyboard-dock.is-collapsed { height: 0 !important; }
 

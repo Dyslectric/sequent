@@ -10,6 +10,15 @@ import { ComputeEngine } from '@cortex-js/compute-engine';
 import { IdentifierRegistry, sanitize } from './identifiers.js';
 import { decideStatement } from './decide.js';
 import { indexOfTopLevel, splitTopLevel } from './top-level.js';
+import {
+  containsSetConstruct,
+  describeSetDefinition,
+  isSetExpression,
+  lowerSetProposition,
+  QUANTIFIERS,
+  SET_RELATIONS,
+  setBuilderParts,
+} from './sets.js';
 
 const ID_RE = /^Id\d+$/;
 
@@ -17,6 +26,10 @@ const RELATIONS = new Set([
   'Equal', 'NotEqual', 'Less', 'LessEqual', 'Greater', 'GreaterEqual', 'IdenticallyEqual',
 ]);
 const CONNECTIVES = new Set(['Implies', 'Equivalent', 'And', 'Or', 'Not']);
+const isStatementOperator = (operator) => (
+  RELATIONS.has(operator) || CONNECTIVES.has(operator)
+  || SET_RELATIONS.has(operator) || QUANTIFIERS.has(operator)
+);
 
 /**
  * Compute Engine has no `\impliedby`, so `A <== B` is rewritten to `B ==> A`.
@@ -48,9 +61,10 @@ const FUNCTION_DEFINITION_RE = new RegExp(
   '\\s*(?:\\\\right)?\\)\\s*(?:=|\\\\coloneq)\\s*([\\s\\S]+)$'
 );
 
-function hasTopLevelConnective(latex) {
-  return ['\\iff', '\\implies', '\\impliedby'].some((t) => indexOfTopLevel(latex, t) >= 0);
-}
+/** Explicit constant definitions are parsed before logical connectives. */
+const CONSTANT_DEFINITION_RE = new RegExp(
+  '^\\\\mathrm\\{(Id\\d+)\\}\\s*\\\\coloneq\\s*([\\s\\S]+)$'
+);
 
 function stripDecorations(latex) {
   return latex
@@ -92,6 +106,19 @@ function mentions(expr, symbol) {
   }
 }
 
+function collectBoundSymbols(expr, out = new Set()) {
+  if (!expr) return out;
+  if (QUANTIFIERS.has(expr.operator) && expr.nops >= 1) {
+    const binding = expr.ops[0];
+    if (binding?.symbol) out.add(binding.symbol);
+    else if (binding?.operator === 'Element' && binding.ops[0]?.symbol) {
+      out.add(binding.ops[0].symbol);
+    }
+  }
+  expr.ops?.forEach((operand) => collectBoundSymbols(operand, out));
+  return out;
+}
+
 /** Engine output uses `\imaginaryI` / `\exponentialE`; users expect `i` and `e`. */
 function tidyLatex(latex) {
   if (!latex) return latex;
@@ -107,7 +134,7 @@ function tidyLatex(latex) {
 }
 
 /** Heads that yield a plain number but do not fold over symbolic arguments. */
-const UNFOLDED_HEAD = /\\lfloor|\\lceil|\\operatorname\{(?:round|Real|Imaginary|Re|Im)\}/;
+const UNFOLDED_HEAD = /\\lfloor|\\lceil|\\operatorname\{(?:rnd|round|Real|Imaginary|Re|Im)\}/;
 
 /**
  * Which of the two evaluations to show.
@@ -177,6 +204,8 @@ export class Sheet {
     if (options.allowDefinitions !== false) {
       const functionDefinition = this.tryFunctionDefinition(prepared);
       if (functionDefinition) return functionDefinition;
+      const constantDefinition = this.tryExplicitConstantDefinition(prepared);
+      if (constantDefinition) return constantDefinition;
     }
 
     let expr;
@@ -197,10 +226,40 @@ export class Sheet {
       if (definition) return definition;
     }
 
-    if (RELATIONS.has(expr.operator) || CONNECTIVES.has(expr.operator)) {
+    if (isStatementOperator(expr.operator)) {
       return this.evaluateStatement(expr, used);
     }
+
+    // A proposition-valued function call or propositional constant may be a
+    // plain symbol/call syntactically, then resolve to a relation, connective,
+    // True, or False through its definition. Route that resolved proposition
+    // through the statement evaluator rather than displaying symbolic ⊤/⊥.
+    try {
+      const resolved = expr.evaluate();
+      if (isStatementOperator(resolved.operator)
+        || resolved.symbol === 'True' || resolved.symbol === 'False') {
+        return this.evaluateStatement(resolved, used);
+      }
+    } catch { /* leave ordinary expressions on the expression path */ }
+
     return this.evaluateExpression(expr);
+  }
+
+  /** Parse `name := body` before `body` can be split as a logical statement. */
+  tryExplicitConstantDefinition(preparedLatex) {
+    const match = CONSTANT_DEFINITION_RE.exec(preparedLatex.trim());
+    if (!match) return null;
+    const [, id, body] = match;
+    if (this.isDefined(id) || new RegExp(`\\b${id}\\b`).test(body)) return null;
+
+    let bodyExpr;
+    try {
+      bodyExpr = this.parseStatement(body);
+    } catch {
+      return null;
+    }
+    if (!bodyExpr || findError(bodyExpr.json)) return null;
+    return this.defineConstant(id, bodyExpr);
   }
 
   isDefined(id) {
@@ -241,11 +300,11 @@ export class Sheet {
     const params = [...argList.matchAll(/Id\d+/g)].map((m) => m[0]);
     if (new Set(params).size !== params.length) return null;
     if (params.some((p) => this.isDefined(p))) return null;
-    if (hasTopLevelConnective(body) || new RegExp(`\\b${head}\\b`).test(body)) return null;
+    if (new RegExp(`\\b${head}\\b`).test(body)) return null;
 
     let bodyExpr;
     try {
-      bodyExpr = this.ce.parse(body);
+      bodyExpr = this.parseStatement(body);
     } catch {
       return null;
     }
@@ -296,12 +355,15 @@ export class Sheet {
   }
 
   defineConstant(id, valueExpr) {
+    const setDefinition = describeSetDefinition(valueExpr, this.definitions);
     this.ce.assign(id, valueExpr);
-    this.definitions.set(id, { kind: 'constant' });
+    this.definitions.set(id, setDefinition
+      ? { kind: 'set', valueExpr, builder: setDefinition.builder }
+      : { kind: 'constant' });
     const entry = this.registry.get(id);
     return {
       kind: 'definition',
-      what: 'constant',
+      what: setDefinition ? 'set' : 'constant',
       nameLatex: entry?.latex ?? id,
       name: entry?.name ?? id,
       valueLatex: tidyLatex(this.registry.toDisplayLatex(valueExpr.latex)),
@@ -324,6 +386,21 @@ export class Sheet {
   }
 
   evaluateExpression(expr) {
+    if (isSetExpression(expr, this.definitions)) {
+      const builder = setBuilderParts(expr);
+      let value = expr;
+      if (!builder) {
+        try { value = expr.evaluate(); } catch { /* display the original set expression */ }
+      }
+      const bound = builder?.binder;
+      const unknowns = expr.unknowns.filter((id) => id !== bound);
+      return {
+        kind: 'set',
+        latex: tidyLatex(this.registry.toDisplayLatex(value.latex)),
+        undefinedNames: unknowns.map((id) => this.registry.get(id)?.name ?? id),
+      };
+    }
+
     const unknowns = expr.unknowns;
     if (unknowns.length > 0) {
       let simplified = expr;
@@ -367,7 +444,33 @@ export class Sheet {
 
   evaluateStatement(expr, used) {
     const complex = JSON.stringify(expr.json).includes('Complex');
-    const verdict = decideStatement(this.ce, expr, { complex });
+    const boundSymbols = collectBoundSymbols(expr);
+    let decidedExpr = expr;
+    let verdict;
+
+    if (containsSetConstruct(expr, this.definitions)) {
+      // Lower before evaluating so Compute Engine cannot mistake two symbolic
+      // set-builders for unequal opaque values. Closed strict-subset and finite
+      // existential forms remain unchanged and are still decided directly.
+      const lowered = lowerSetProposition(
+        this.ce,
+        expr,
+        this.definitions,
+        () => this.registry.createInternal().id
+      );
+      decidedExpr = lowered.expr;
+      verdict = decideStatement(this.ce, decidedExpr, {
+        complex,
+        // An unresolved set variable must never receive a numeric test value.
+        allowSampling: !lowered.unresolvedSets,
+        // Nor may an opaque set/domain atom be accepted from Compute Engine's
+        // eager evaluation; the symbolic tautology prover still runs below it.
+        allowDirectEvaluation: !lowered.unsafeEvaluation && !lowered.unresolvedSets,
+      });
+    } else {
+      verdict = decideStatement(this.ce, expr, { complex });
+    }
+
     return {
       kind: 'truth',
       value: verdict.value,
@@ -379,7 +482,9 @@ export class Sheet {
           valueLatex: tidyLatex(valueLatex),
         }))
         : null,
-      undefinedNames: expr.unknowns.map((id) => this.registry.get(id)?.name ?? id),
+      undefinedNames: decidedExpr.unknowns
+        .filter((id) => this.registry.get(id)?.kind !== 'internal' && !boundSymbols.has(id))
+        .map((id) => this.registry.get(id)?.name ?? id),
       usedCount: used.size,
     };
   }

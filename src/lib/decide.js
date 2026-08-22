@@ -22,6 +22,54 @@ const RELATIONS = new Set([
   'Equal', 'NotEqual', 'Less', 'LessEqual', 'Greater', 'GreaterEqual', 'IdenticallyEqual',
 ]);
 
+const BOOLEAN_CONNECTIVES = new Set(['And', 'Or', 'Not', 'Implies', 'Equivalent']);
+const MAX_BOOLEAN_ATOMS = 12;
+
+/**
+ * Prove a proposition from its Boolean skeleton alone. Atomic statements stay
+ * opaque, so a positive result is sound for arithmetic, set membership, or any
+ * future proposition type. This is the complete decision procedure for the
+ * pointwise set-algebra identities produced by the set lowering pass.
+ */
+function booleanSkeletonTautology(expr) {
+  if (!BOOLEAN_CONNECTIVES.has(expr.operator)) return null;
+  const atoms = new Map();
+
+  const collect = (node) => {
+    if (node?.symbol === 'True' || node?.symbol === 'False') return;
+    if (BOOLEAN_CONNECTIVES.has(node?.operator)) {
+      node.ops.forEach(collect);
+      return;
+    }
+    const key = JSON.stringify(node?.json);
+    if (!atoms.has(key)) atoms.set(key, atoms.size);
+  };
+  collect(expr);
+  if (atoms.size > MAX_BOOLEAN_ATOMS) return null;
+
+  const evaluate = (node, assignment) => {
+    if (node?.symbol === 'True') return true;
+    if (node?.symbol === 'False') return false;
+    const op = node?.operator;
+    if (!BOOLEAN_CONNECTIVES.has(op)) return assignment[atoms.get(JSON.stringify(node?.json))];
+    if (op === 'Not') return !evaluate(node.ops[0], assignment);
+    if (op === 'And') return node.ops.every((operand) => evaluate(operand, assignment));
+    if (op === 'Or') return node.ops.some((operand) => evaluate(operand, assignment));
+    if (op === 'Implies') return !evaluate(node.ops[0], assignment)
+      || evaluate(node.ops[1], assignment);
+    if (op === 'Equivalent') return evaluate(node.ops[0], assignment)
+      === evaluate(node.ops[1], assignment);
+    return false;
+  };
+
+  const assignment = new Array(atoms.size).fill(false);
+  for (let mask = 0; mask < 2 ** atoms.size; mask++) {
+    for (let bit = 0; bit < atoms.size; bit++) assignment[bit] = Boolean(mask & (1 << bit));
+    if (!evaluate(expr, assignment)) return null;
+  }
+  return true;
+}
+
 /** Deterministic PRNG so the same sheet always yields the same verdict. */
 function makeRandom(seed) {
   let s = seed >>> 0 || 1;
@@ -99,6 +147,61 @@ function truthOf(expr) {
   const sym = expr.symbol;
   if (sym === 'True') return true;
   if (sym === 'False') return false;
+  return null;
+}
+
+/** Exact truth evaluation after all free variables have been substituted. */
+function truthOfConstantStatement(ce, expr) {
+  const direct = truthOf(expr);
+  if (direct !== null) return direct;
+
+  const op = expr.operator;
+  if (RELATIONS.has(op)) {
+    if (expr.nops > 2 && op !== 'NotEqual') {
+      for (let i = 0; i + 1 < expr.nops; i++) {
+        const link = truthOfConstantStatement(ce, ce.box([op, expr.ops[i], expr.ops[i + 1]]));
+        if (link !== true) return link;
+      }
+      return true;
+    }
+    const relation = normalizeRelation(ce, expr);
+    if (!relation || relation.diff.unknowns.length > 0) return null;
+    try {
+      const value = relation.diff.evaluate();
+      const zero = value.is(0);
+      if (relation.kind === 'eq') return zero === true ? true : zero === false ? false : null;
+      if (relation.kind === 'ne') return zero === true ? false : zero === false ? true : null;
+      if (value.isPositive === true) return true;
+      if (value.isNegative === true) return false;
+      if (zero === true) return relation.kind === 'ge';
+      return null;
+    } catch {
+      return null;
+    }
+  }
+
+  const values = () => expr.ops.map((operand) => truthOfConstantStatement(ce, operand));
+  if (op === 'Not' && expr.nops === 1) {
+    const value = truthOfConstantStatement(ce, expr.ops[0]);
+    return value === null ? null : !value;
+  }
+  if (op === 'And') {
+    const results = values();
+    return results.includes(false) ? false : results.every((value) => value === true) ? true : null;
+  }
+  if (op === 'Or') {
+    const results = values();
+    return results.includes(true) ? true : results.every((value) => value === false) ? false : null;
+  }
+  if (op === 'Implies' && expr.nops === 2) {
+    const [left, right] = values();
+    return left === false || right === true ? true
+      : left === true && right === false ? false : null;
+  }
+  if (op === 'Equivalent' && expr.nops === 2) {
+    const [left, right] = values();
+    return left === null || right === null ? null : left === right;
+  }
   return null;
 }
 
@@ -307,6 +410,168 @@ function constantRatio(ce, num, den) {
   }
 }
 
+/** Find `powered = c * base^n` for a small positive integer n, exactly. */
+function powerRelationship(ce, base, powered) {
+  if (hasUnknownDenominator(base) || hasUnknownDenominator(powered)) return null;
+
+  // Fast path for the overwhelmingly common explicit shape `c * q^n`. Match
+  // q to ±base symbolically and read the remaining constant factors directly;
+  // no probing is needed when the syntax itself is already a certificate.
+  let outerSign = 1;
+  let body = powered;
+  if (body.operator === 'Negate') {
+    outerSign = -1;
+    body = body.ops[0];
+  }
+  const factors = body.operator === 'Multiply' ? body.ops : [body];
+  const powerFactors = factors.filter((factor) => (
+    factor.operator === 'Square'
+    || (factor.operator === 'Power' && factor.nops === 2)
+  ));
+  if (powerFactors.length === 1) {
+    const powerFactor = powerFactors[0];
+    const exponent = powerFactor.operator === 'Square' ? 2 : powerFactor.ops[1]?.re;
+    const inner = powerFactor.ops[0];
+    const constants = factors.filter((factor) => factor !== powerFactor);
+    if (Number.isInteger(exponent) && exponent >= 2 && exponent <= 8
+      && constants.every((factor) => factor.unknowns.length === 0)) {
+      let baseSign = 0;
+      if (isZero(ce.box(['Subtract', inner, base]))) baseSign = 1;
+      else if (isZero(ce.box(['Add', inner, base]))) baseSign = -1;
+
+      if (baseSign !== 0) {
+        try {
+          const scale = constants.length === 0
+            ? ce.box(outerSign)
+            : ce.box(['Multiply', outerSign, ...constants]).evaluate();
+          let scaleSign = scale.isPositive === true ? 1 : scale.isNegative === true ? -1 : null;
+          if (scaleSign !== null) {
+            if (baseSign < 0 && exponent % 2 !== 0) scaleSign *= -1;
+            return { exponent, scaleSign };
+          }
+        } catch { /* use the verified fallback below */ }
+      }
+    }
+  }
+
+  const candidateExponents = new Set();
+  const inspectFactor = (factor) => {
+    if (factor.operator === 'Square') candidateExponents.add(2);
+    if (factor.operator !== 'Power' || factor.nops !== 2) return;
+    const exponent = factor.ops[1]?.re;
+    if (Number.isInteger(exponent) && exponent >= 2 && exponent <= 8) {
+      candidateExponents.add(exponent);
+    }
+  };
+  if (powered.operator === 'Multiply') powered.ops.forEach(inspectFactor);
+  else if (powered.operator === 'Negate') inspectFactor(powered.ops[0]);
+  else inspectFactor(powered);
+
+  for (const exponent of candidateExponents) {
+    try {
+      const power = ce.box(['Power', base, exponent]);
+      // Compute Engine deliberately avoids cancelling symbolic powers in a
+      // quotient because of domains. Guess the scale from values instead, then
+      // accept it only after an exact residual check (the same sound pattern as
+      // affineRelationship).
+      const affine = affineRelationship(ce, power, powered);
+      if (affine && signOf(affine.k) === 0) {
+        const scaleSign = signOf(affine.c);
+        if (scaleSign !== null && scaleSign !== 0) return { exponent, scaleSign };
+      }
+
+      const scale = ce.box(['Divide', powered, power]).simplify();
+      if (scale.unknowns.length > 0) continue;
+      const scaleSign = signOf(scale);
+      if (scaleSign === null || scaleSign === 0) continue;
+      const residual = ce.box(['Subtract', powered, ce.box(['Multiply', scale, power])]);
+      if (isZero(residual)) return { exponent, scaleSign };
+    } catch { /* try the next exponent */ }
+  }
+  return null;
+}
+
+/** Pointwise sign implications for `q = c*p^n`. */
+function impliesThroughPower(antecedent, consequent, exponent, scaleSign, reverse = false) {
+  const even = exponent % 2 === 0;
+
+  if (!reverse) {
+    switch (antecedent) {
+      case 'eq': return consequent === 'eq' || consequent === 'ge';
+      case 'ne':
+        if (consequent === 'ne') return true;
+        return even && scaleSign > 0 && (consequent === 'gt' || consequent === 'ge');
+      case 'gt':
+        if (consequent === 'ne') return true;
+        return scaleSign > 0 && (consequent === 'gt' || consequent === 'ge');
+      case 'ge': return scaleSign > 0 && consequent === 'ge';
+      default: return false;
+    }
+  }
+
+  // Here the antecedent is `c*p^n` and the consequent is `p`.
+  switch (antecedent) {
+    case 'eq': return consequent === 'eq' || consequent === 'ge';
+    case 'ne': return consequent === 'ne';
+    case 'gt':
+      if (even && scaleSign < 0) return true; // impossible antecedent
+      if (consequent === 'ne') return true;
+      return !even && scaleSign > 0 && (consequent === 'gt' || consequent === 'ge');
+    case 'ge':
+      if (even && scaleSign < 0) return consequent === 'eq' || consequent === 'ge';
+      return !even && scaleSign > 0 && consequent === 'ge';
+    default: return false;
+  }
+}
+
+/** If `product = factor * cofactor` syntactically, return the exact cofactor. */
+function productCofactor(ce, factor, product) {
+  let outerSign = 1;
+  let body = product;
+  if (body.operator === 'Negate') {
+    outerSign = -1;
+    body = body.ops[0];
+  }
+  const factors = body.operator === 'Multiply' ? body.ops : [body];
+  for (let i = 0; i < factors.length; i++) {
+    let matchedSign = 0;
+    if (isZero(ce.box(['Subtract', factors[i], factor]))) matchedSign = 1;
+    else if (isZero(ce.box(['Add', factors[i], factor]))) matchedSign = -1;
+    if (matchedSign === 0) continue;
+    const rest = factors.filter((_, index) => index !== i);
+    const scale = outerSign * matchedSign;
+    if (rest.length === 0) return ce.box(scale);
+    return scale === 1 ? ce.box(['Multiply', ...rest]) : ce.box(['Multiply', scale, ...rest]);
+  }
+  return null;
+}
+
+/** Sign of a cofactor known to be everywhere nonzero, or null. */
+function universalNonzeroSign(ce, cofactor) {
+  if (cofactor.unknowns.length === 0) {
+    try {
+      const value = cofactor.evaluate();
+      if (value.isPositive === true) return 1;
+      if (value.isNegative === true) return -1;
+    } catch { /* try structural proof below */ }
+  }
+  if (proveRelationBySign(ce, { kind: 'gt', diff: cofactor }) === true) return 1;
+  const negated = ce.box(['Negate', cofactor]);
+  if (proveRelationBySign(ce, { kind: 'gt', diff: negated }) === true) return -1;
+  return null;
+}
+
+/** Multiplication by a nonzero (or positive) factor preserves a relation. */
+function impliesThroughProduct(ce, antecedent, consequent) {
+  if (antecedent.kind !== consequent.kind) return false;
+  const cofactor = productCofactor(ce, antecedent.diff, consequent.diff);
+  if (!cofactor) return false;
+  const cofactorSign = universalNonzeroSign(ce, cofactor);
+  if (cofactorSign === null) return false;
+  if (antecedent.kind === 'eq' || antecedent.kind === 'ne') return true;
+  return cofactorSign > 0;
+}
+
 /**
  * Symbolic attempt at `A -> B`, both sides relations. Proves, in order:
  *   - the same relation on both sides;
@@ -327,6 +592,18 @@ function proveImplies(ce, left, right) {
   // ...and vacuously true when the antecedent can never hold at all.
   const impossible = negateRelation(ce, a);
   if (impossible && proveRelationBySign(ce, impossible) === true) return true;
+
+  const forwardPower = powerRelationship(ce, a.diff, b.diff);
+  if (forwardPower && impliesThroughPower(
+    a.kind, b.kind, forwardPower.exponent, forwardPower.scaleSign
+  )) return true;
+
+  const reversePower = powerRelationship(ce, b.diff, a.diff);
+  if (reversePower && impliesThroughPower(
+    a.kind, b.kind, reversePower.exponent, reversePower.scaleSign, true
+  )) return true;
+
+  if (impliesThroughProduct(ce, a, b) || impliesThroughProduct(ce, b, a)) return true;
 
   const affine = affineRelationship(ce, a.diff, b.diff);
   if (affine && impliesUnderAffine(a.kind, b.kind, signOf(affine.c), signOf(affine.k))) {
@@ -438,6 +715,8 @@ function decideExactly(ce, expr) {
 function proveSymbolically(ce, expr) {
   const op = expr.operator;
 
+  if (booleanSkeletonTautology(expr) === true) return true;
+
   // Compute Engine represents homogeneous relation chains as one n-ary
   // relation (`Equal(a, b, c)`, `Less(a, b, c)`, ...), rather than the `And`
   // of binary links used for mixed inequality chains. A chain holds exactly
@@ -501,16 +780,37 @@ const MIN_DECISIVE = 8;
 const TIME_BUDGET_MS = 250;
 
 /**
+ * Sampling cannot establish an equivalence between equations over different
+ * sets of free variables. Almost every random point makes both equations
+ * false, which would otherwise produce a very convincing but spurious `true`.
+ */
+function hasMismatchedEquationVariables(expr) {
+  if (!['Equivalent', 'IdenticallyEqual'].includes(expr.operator) || expr.nops !== 2) return false;
+  const [left, right] = expr.ops;
+  if (!['Equal', 'IdenticallyEqual'].includes(left.operator)
+    || !['Equal', 'IdenticallyEqual'].includes(right.operator)) return false;
+  const a = [...new Set(left.unknowns)].sort();
+  const b = [...new Set(right.unknowns)].sort();
+  return a.length !== b.length || a.some((id, index) => id !== b[index]);
+}
+
+/**
  * @returns {{value: boolean|null, method: string, samples: number, counterexample: Array|null}}
  */
 export function decideStatement(ce, expr, options = {}) {
   const complex = options.complex ?? false;
+  const allowSampling = options.allowSampling !== false;
+  const allowDirectEvaluation = options.allowDirectEvaluation !== false;
 
   // 1a. Outright proof by the CAS.
   let evaluated;
-  try {
-    evaluated = expr.evaluate();
-  } catch {
+  if (allowDirectEvaluation) {
+    try {
+      evaluated = expr.evaluate();
+    } catch {
+      evaluated = null;
+    }
+  } else {
     evaluated = null;
   }
   const direct = evaluated ? truthOf(evaluated) : null;
@@ -539,6 +839,10 @@ export function decideStatement(ce, expr, options = {}) {
     return { value: true, method: 'proved', samples: 0, counterexample: null };
   }
 
+  if (!allowSampling) {
+    return { value: null, method: 'undecided', samples: 0, counterexample: null };
+  }
+
   // 2. Numeric search for a counterexample.
   const unknowns = expr.unknowns;
   if (unknowns.length === 0) {
@@ -555,13 +859,19 @@ export function decideStatement(ce, expr, options = {}) {
   let decisive = 0;
 
   const trial = (assignment) => {
-    let result;
+    let substituted;
     try {
-      result = expr.subs(assignment).evaluate();
+      substituted = expr.subs(assignment);
     } catch {
       return null;
     }
-    return truthOf(result);
+    const exact = truthOfConstantStatement(ce, substituted);
+    if (exact !== null) return exact;
+    try {
+      return truthOf(substituted.evaluate());
+    } catch {
+      return null;
+    }
   };
 
   const describe = (indices) => unknowns.map((id, k) => ({
@@ -582,11 +892,19 @@ export function decideStatement(ce, expr, options = {}) {
     }
   } else {
     const indices = new Array(unknowns.length).fill(0);
+    const zeroIndex = pool.findIndex((candidate) => candidate.latex === '0');
     for (let k = 0; k < MAX_SAMPLES; k++) {
       if (k % 16 === 0 && Date.now() - started > TIME_BUDGET_MS) break;
-      // First pass the "all variables equal" diagonal, then random tuples.
-      for (let v = 0; v < unknowns.length; v++) {
-        indices[v] = k < pool.length ? (k + v * 3) % pool.length : Math.floor(random() * pool.length);
+      // Probe the true diagonal, then each coordinate axis. Axis probes matter
+      // for equations where an extra variable is the only semantic difference.
+      if (k < pool.length) {
+        indices.fill(k);
+      } else if (zeroIndex >= 0 && k < pool.length * (unknowns.length + 1)) {
+        indices.fill(zeroIndex);
+        const offset = k - pool.length;
+        indices[Math.floor(offset / pool.length)] = offset % pool.length;
+      } else {
+        for (let v = 0; v < unknowns.length; v++) indices[v] = Math.floor(random() * pool.length);
       }
       const assignment = {};
       unknowns.forEach((id, v) => { assignment[id] = pool[indices[v]].expr; });
@@ -598,7 +916,7 @@ export function decideStatement(ce, expr, options = {}) {
     }
   }
 
-  if (decisive >= MIN_DECISIVE) {
+  if (decisive >= MIN_DECISIVE && !hasMismatchedEquationVariables(expr)) {
     return { value: true, method: 'sampled', samples: decisive, counterexample: null };
   }
   return { value: null, method: 'undecided', samples: decisive, counterexample: null };

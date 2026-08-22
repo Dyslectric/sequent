@@ -8,10 +8,34 @@ import {
   formatTopLevelChain,
   getTopLevelChainCheckpoints,
 } from '../src/lib/top-level.js';
+import {
+  CALCULATOR_LAYOUT,
+  INLINE_SHORTCUTS,
+  KEYBOARD_LAYOUTS,
+  SET_LAYOUT,
+} from '../src/lib/mathfield.js';
+import { parseSheetStateHash, serializeSheetState } from '../src/lib/url-state.js';
 
 let passed = 0;
 let failed = 0;
 const failures = [];
+
+console.log('== live URL sheet state ==');
+const urlHash = serializeSheetState({
+  lines: ['x^2+y^2\\ge 0', '\\text{speed}:=3', ''],
+  display: 'decimal',
+});
+const urlRoundTrip = parseSheetStateHash(urlHash);
+if (JSON.stringify(urlRoundTrip) === JSON.stringify({
+  lines: ['x^2+y^2\\ge 0', '\\text{speed}:=3', ''],
+  display: 'decimal',
+})) passed++;
+else failures.push(`URL state did not round-trip: ${JSON.stringify(urlRoundTrip)}`);
+
+for (const invalidHash of ['#sheet=', '#sheet=%7Bbad', '#sheet=%7B%22v%22%3A2%7D', '#demo']) {
+  if (parseSheetStateHash(invalidHash) === null) passed++;
+  else failures.push(`invalid URL state was accepted: ${invalidHash}`);
+}
 
 function describeResult(r) {
   switch (r.kind) {
@@ -174,13 +198,15 @@ check('sqrt of negative', ['\\sqrt{-1}'], (r) => r.kind === 'value' && /i/.test(
 check('pi', ['2\\pi'], isApprox(2 * Math.PI));
 check('e', ['e^0'], isValue('1'));
 
-console.log('== floor / ceil / round / Re / Im ==');
+console.log('== floor / ceil / rnd / Re / Im ==');
 check('floor brackets', ['\\lfloor 3.7\\rfloor'], isValue('3'));
 check('ceil brackets', ['\\lceil 3.2\\rceil'], isValue('4'));
 check('floor negative', ['\\lfloor -3.2\\rfloor'], isValue('-4'));
 check('floor operator', ['\\operatorname{floor}(3.7)'], isValue('3'));
 check('ceil operator', ['\\operatorname{ceil}(3.2)'], isValue('4'));
-check('round operator', ['\\operatorname{round}(3.5)'], isValue('4'));
+check('rnd operator', ['\\operatorname{rnd}(3.5)'], isValue('4'));
+check('MathLive copied rnd', ['\\operatorname{\\mathrm{rnd}}\\left(3.5\\right)'], isValue('4'));
+check('legacy round operator', ['\\operatorname{round}(3.5)'], isValue('4'));
 check('Re', ['\\operatorname{Re}(3+4i)'], isValue('3'));
 check('Im', ['\\operatorname{Im}(3+4i)'], isValue('4'));
 check('MathLive typed Re', ['\\mathrm{Re}(3+4i)'], isValue('3'));
@@ -191,7 +217,66 @@ check('Re of expression', ['\\operatorname{Re}((1+i)^2)'], isValue('0'));
 check('ceil of pi', ['\\lceil\\pi\\rceil'], isValue('4'));
 check('floor of -pi', ['\\lfloor-\\pi\\rfloor'], isValue('-4'));
 check('rounding over symbolic constants folds', ['\\lceil\\pi\\rceil+\\lfloor-\\pi\\rfloor'], isValue('0'));
-check('round of e', ['\\operatorname{round}(e)'], isValue('3'));
+check('rnd of e', ['\\operatorname{rnd}(e)'], isValue('3'));
+const rndKey = CALCULATOR_LAYOUT.rows.flat().find((entry) => entry.label === 'rnd');
+if (rndKey?.insert === '\\operatorname{rnd}(#?)' && INLINE_SHORTCUTS.rnd) passed++;
+else failures.push('calculator keyboard and inline shortcut should expose rnd');
+const keyboardUnitWidth = (entry) => {
+  if (entry.width) return entry.width;
+  const widthClass = entry.class?.match(/(?:^|\s)w(\d+)(?:\s|$)/)?.[1];
+  return widthClass ? Number(widthClass) / 10 : 1;
+};
+const keyboardKeyStart = (row, latex) => {
+  let position = 0;
+  for (const entry of row) {
+    if (entry.latex === latex) return position;
+    position += keyboardUnitWidth(entry);
+  }
+  return -1;
+};
+const numberStarts = ['7', '4', '1', '0'].map((latex, row) => (
+  keyboardKeyStart(CALCULATOR_LAYOUT.rows[row], latex)
+));
+if (numberStarts.every((start) => start === numberStarts[0])) passed++;
+else failures.push(`calculator number columns should align: ${numberStarts.join(', ')}`);
+const calculatorRowWidths = CALCULATOR_LAYOUT.rows.slice(0, 4)
+  .map((row) => row.reduce((sum, entry) => sum + keyboardUnitWidth(entry), 0));
+if (calculatorRowWidths.every((width) => width === calculatorRowWidths[0])) passed++;
+else failures.push(`calculator number rows should have equal widths: ${calculatorRowWidths.join(', ')}`);
+const returnKey = CALCULATOR_LAYOUT.rows.at(-1).find((entry) => entry.label === '[return]');
+if (returnKey?.tooltip === 'new line') passed++;
+else failures.push('calculator keyboard should expose a bottom-row Return key');
+const backspaceKey = CALCULATOR_LAYOUT.rows.at(-1).find((entry) => entry.label === '[backspace]');
+if (backspaceKey?.class?.split(/\s+/).includes('calc-backspace')) passed++;
+else failures.push('calculator Backspace should use the button-sized icon treatment');
+const boxedTemplateKeys = CALCULATOR_LAYOUT.rows.flat().filter((entry) => (
+  [
+    '\\lfloor#?\\rfloor', '\\lceil#?\\rceil', '\\frac{#?}{#?}',
+    '#?^{#?}', '#?_{#?}', '\\sqrt{#?}',
+  ].includes(entry.latex) || entry.label === '|x|'
+));
+if (boxedTemplateKeys.length === 7
+  && boxedTemplateKeys.every((entry) => entry.class?.split(/\s+/).includes('small'))) passed++;
+else failures.push('boxed calculator templates should use the smaller keycap scale');
+const functionKeyLabels = CALCULATOR_LAYOUT.rows.at(-2)
+  .filter((entry) => entry.label)
+  .map((entry) => entry.label);
+if (JSON.stringify(functionKeyLabels) === JSON.stringify(['sin', 'cos', 'tan', 'ln', 'log'])) passed++;
+else failures.push(`calculator function row is incomplete: ${functionKeyLabels.join(', ')}`);
+if (KEYBOARD_LAYOUTS[0] === CALCULATOR_LAYOUT
+  && KEYBOARD_LAYOUTS[1] === SET_LAYOUT
+  && JSON.stringify(KEYBOARD_LAYOUTS.slice(2)) === JSON.stringify(['alphabetic', 'greek'])) passed++;
+else failures.push('redundant numeric and symbols keyboard tabs should be removed');
+const setKeys = SET_LAYOUT.rows.flat().map((entry) => entry.latex ?? entry.insert ?? entry.label);
+if (['\\in', '\\notin', '\\subseteq', '\\cup', '\\cap', '\\setminus', '\\varnothing', '\\mathbb{R}']
+  .every((expected) => setKeys.includes(expected))) passed++;
+else failures.push('set keyboard should expose the core relation, operation, and domain keys');
+if (setKeys.filter((entry) => entry === '\\varnothing' || entry === '\\emptyset').length === 1) passed++;
+else failures.push('set keyboard should expose exactly one empty-set key');
+const standardSetKeys = SET_LAYOUT.rows[2];
+if (standardSetKeys.length === 5
+  && standardSetKeys.every((entry) => !entry.class?.split(/\s+/).includes('small'))) passed++;
+else failures.push('standard number-set keys should use the full keycap scale');
 check('closed forms survive the fold', ['\\sqrt{8}'], isValue('2\\sqrt{2}'));
 check('pi stays symbolic', ['2\\pi'], isApprox(2 * Math.PI));
 check('third stays exact', ['\\frac{1}{3}'], isValue('\\frac{1}{3}'));
@@ -266,6 +351,10 @@ check('factored form', ['x^2-1=0\\iff (x-1)(x+1)=0'], isTrue);
 check('rearranged', ['x+1=2\\iff x=1'], isTrue);
 check('not equivalent', ['x^2=1\\iff x=1'], isFalse);
 check('equiv symbol', ['x+1=2\\equiv x=1'], isTrue);
+check('equations with an extra variable are not equivalent',
+  ['x+y=0\\iff x+y+z=0'], isFalse);
+check('extra-variable equation with a nonzero level is not equivalent',
+  ['x+y=1\\iff x+y+z=1'], isFalse);
 
 console.log('== equivalence of inequalities ==');
 check('scaled inequality', ['x>2\\iff 2x>4'], isTrue);
@@ -409,6 +498,22 @@ console.log('== definitions feeding statements ==');
 check('constants make equation numeric', ['a=3', 'b=4', 'a^2+b^2=25'], isTrue);
 check('constants make it false', ['a=3', 'b=4', 'a^2+b^2=26'], isFalse);
 check('function in an equation', ['f(x)=x^2', 'f(3)=9'], isTrue);
+
+console.log('== proposition-valued definitions ==');
+check('predicate call is true', ['P(x):=x>0', 'P(3)'], isProved);
+check('predicate call is false', ['P(x):=x>0', 'P(-1)'], isFalse);
+check('predicate composes logically', ['P(x):=x>0', 'P(3)\\land\\neg P(-1)'], isProved);
+check('compound predicate', ['B(x):=x>0\\land x<2', 'B(1)'], isProved);
+check('compound predicate false', ['B(x):=x>0\\land x<2', 'B(3)'], isFalse);
+check('implication-valued predicate',
+  ['N(x):=x\\ne0\\implies x^2>0', 'N(2)'], isProved);
+check('equivalence-valued predicate',
+  ['Z(x):=x=0\\iff x^2=0', 'Z(3)'], isProved);
+check('true propositional constant', ['T:=2<3', 'T'], isProved);
+check('false propositional constant', ['F:=2>3', 'F'], isFalse);
+check('propositional constant composes', ['T:=2<3', 'T\\land 4=4'], isProved);
+check('compound propositional constant',
+  ['T:=2<3\\implies 4=4', 'T'], isProved);
 check('function in an inequality', ['f(x)=x^2', 'f(3)>8'], isTrue);
 check('defined names in implication', ['k=2', 'x>k\\implies x>1'], isTrue);
 

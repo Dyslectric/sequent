@@ -20,7 +20,10 @@
             <button type="button" data-display="exact" class="is-active">Exact</button>
             <button type="button" data-display="decimal">Decimal</button>
           </div>
-          <a id="page-link" class="icon-button page-link" href="#demo">Demo</a>
+          <div class="segmented page-switcher" role="group" aria-label="Sheet page">
+            <a id="sheet-link" href="./">Sheet</a>
+            <a id="demo-link" href="#demo">Demo</a>
+          </div>
           <button type="button" id="export-sheet" class="icon-button" title="Save this sheet to a file">Export</button>
           <button type="button" id="import-sheet" class="icon-button" title="Replace this sheet from a file">Import</button>
           <input type="file" id="import-file" accept="application/json,.json" hidden />

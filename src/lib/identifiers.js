@@ -39,6 +39,7 @@ const TEXT_WRAPPERS = new Set([
 /** Never renamed: these carry meaning the engine already understands. */
 const RESERVED_COMMANDS = new Set(['pi', 'infty', 'imaginaryI', 'exponentialE']);
 const RESERVED_LETTERS = new Set(['i', 'e']);
+const STANDARD_BLACKBOARD_SETS = new Set(['N', 'Z', 'Q', 'R', 'C']);
 
 /**
  * Names inside `\operatorname{...}` that are engine builtins rather than
@@ -51,7 +52,7 @@ const BUILTIN_FUNCTIONS = new Map(Object.entries({
   arg: 'Arg', Arg: 'Arg',
   floor: 'floor', Floor: 'floor',
   ceil: 'ceil', ceiling: 'ceil', Ceil: 'ceil',
-  round: 'round', Round: 'round',
+  rnd: 'round', Rnd: 'round', round: 'round', Round: 'round',
   abs: 'abs', Abs: 'abs',
   sgn: 'sgn', sign: 'sgn',
   gcd: 'gcd', GCD: 'gcd', lcm: 'lcm', LCM: 'lcm',
@@ -214,6 +215,14 @@ export class IdentifierRegistry {
     return this.byId.get(id);
   }
 
+  /** A proof-only symbol with a readable name that cannot alias user input. */
+  createInternal(latex = '\\text{element}', name = 'element') {
+    const id = `Id${this.counter++}`;
+    const entry = { id, key: `internal:${id}`, latex, name, kind: 'internal' };
+    this.byId.set(id, entry);
+    return entry;
+  }
+
   /** Rewrite engine output back into the names the user actually typed. */
   toDisplayLatex(latex) {
     if (!latex) return latex;
@@ -280,13 +289,33 @@ export function sanitize(rawLatex, registry) {
     if (c === '\\') {
       const cmd = readCommand(src, i);
 
+      // Keep the standard number sets intact. Without this special case the
+      // identifier scanner sees the `R` inside `\\mathbb{R}` as a user name and
+      // rewrites it, destroying Compute Engine's built-in `RealNumbers` token.
+      if (cmd.name === 'mathbb') {
+        const j = skipSpace(src, cmd.end);
+        if (src[j] === '{') {
+          const { content, end } = readBalanced(src, j);
+          const name = content.trim();
+          if (STANDARD_BLACKBOARD_SETS.has(name)) {
+            out += `\\mathbb{${name}}`;
+            i = end;
+            continue;
+          }
+        }
+      }
+
       // `\operatorname{...}` is either an engine builtin or a user function name.
       if (cmd.name === 'operatorname') {
         const j = skipSpace(src, cmd.end);
         if (src[j] === '{') {
           const { content, end } = readBalanced(src, j);
           const name = content.trim();
-          const builtin = BUILTIN_FUNCTIONS.get(name);
+          // MathLive serializes word-labelled virtual-keyboard functions as
+          // `\operatorname{\mathrm{name}}`. Unwrap that presentation layer so
+          // rnd, floor, ceil, Re, Im, and the other builtins keep their meaning.
+          const romanName = /^\\mathrm\s*\{\s*([^{}]+)\s*\}$/.exec(name)?.[1]?.trim() ?? name;
+          const builtin = BUILTIN_FUNCTIONS.get(romanName);
           if (builtin) {
             out += `\\operatorname{${builtin}}`;
             i = end;

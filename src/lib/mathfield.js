@@ -208,50 +208,124 @@ export const EXPR_LAYOUT = {
  * minus sign and a subscript outside one. That is why the serif toggle sits
  * here too — `\text{max-speed}` is a name, `max-speed` is a subtraction.
  */
-const letterKey = (lower) => ({ latex: lower, variants: [lower.toUpperCase()] });
-const greekKey = (command, capital) => ({
-  latex: `\\${command}`,
-  ...(capital ? { variants: [`\\${capital}`] } : {}),
-});
+const LATIN_ROWS = ['qwertyuiop', 'asdfghjkl', 'zxcvbnm'].map((row) => row.split(''));
+
+/**
+ * Greek on the QWERTY positions a Greek keyboard actually uses, so `a` is α
+ * and `p` is π. `q` has no Greek counterpart and takes the variant theta.
+ */
+const GREEK_ROWS = [
+  ['vartheta', 'varsigma', 'epsilon', 'rho', 'tau', 'upsilon', 'theta', 'iota', 'omicron', 'pi'],
+  ['alpha', 'sigma', 'delta', 'phi', 'gamma', 'eta', 'xi', 'kappa', 'lambda'],
+  ['zeta', 'chi', 'psi', 'omega', 'beta', 'nu', 'mu'],
+];
+
+/**
+ * Only eleven Greek letters have a capital of their own; the rest are written
+ * with the Latin capital and have no command. Those positions are left blank
+ * rather than filled with a Latin letter that would be a different name.
+ */
+const GREEK_CAPITAL_ROWS = [
+  [null, null, null, null, null, 'Upsilon', 'Theta', null, null, 'Pi'],
+  [null, 'Sigma', 'Delta', 'Phi', 'Gamma', null, 'Xi', null, 'Lambda'],
+  [null, null, 'Psi', 'Omega', null, null, null],
+];
+
+const DEFN_LOWER = 'defn-lower';
+const DEFN_UPPER = 'defn-upper';
+const DEFN_GREEK = 'defn-greek';
+const DEFN_GREEK_UPPER = 'defn-greek-upper';
+
+const letterRows = (rows, transform) => rows.map((row) => row.map((entry) => (
+  entry === null ? { class: 'separator' } : transform(entry)
+)));
+
+/**
+ * One layer of the naming keyboard.
+ *
+ * Two shifts rather than one: `⇧` changes case and `α` changes alphabet, so
+ * the four combinations are four layers and each shift only ever toggles its
+ * own axis. Everything that is not a letter — the digits, `:=`, subscript,
+ * hyphen, underscore, the serif toggle and the navigation keys — is identical
+ * on all four, so switching layer never moves anything under the finger.
+ */
+function defnLayer({ id, rows, shiftTo, greekTo, shiftActive, greekActive }) {
+  return {
+    id,
+    rows: [
+      [
+        key('1'), key('2'), key('3'), key('4'), key('5'),
+        key('6'), key('7'), key('8'), key('9'), key('0'),
+      ],
+      rows[0],
+      [{ class: 'separator w5' }, ...rows[1], { class: 'separator w5' }],
+      [
+        {
+          label: '⇧',
+          layer: shiftTo,
+          tooltip: 'uppercase',
+          class: `action w15${shiftActive ? ' defn-active' : ''}`,
+        },
+        ...rows[2],
+        {
+          label: 'α',
+          layer: greekTo,
+          tooltip: 'greek letters',
+          class: `action w15${greekActive ? ' defn-active' : ''}`,
+        },
+      ],
+      [
+        {
+          label: '<span style="font-family:Georgia,serif;font-size:0.9em">abc</span>',
+          command: ['switchMode', 'text'],
+          tooltip: 'serif text, for names longer than one letter (Ctrl+T)',
+          class: 'w15',
+        },
+        { label: '-', key: '-', tooltip: 'hyphen in a serif name, minus outside one' },
+        { label: '_', key: '_', tooltip: 'underscore in a serif name, subscript outside one' },
+        { latex: '#?_{#?}', insert: '_{#?}', tooltip: 'subscript', class: 'small' },
+        { ...defineKey, width: 1.5 },
+        { label: '[left]', tooltip: 'move left' },
+        { label: '[right]', tooltip: 'move right' },
+        { label: '[backspace]', tooltip: 'backspace', class: 'action hide-shift calc-backspace' },
+        { label: '[return]', tooltip: 'new line' },
+      ],
+    ],
+  };
+}
 
 export const DEFN_LAYOUT = {
   label: 'defn',
   tooltip: 'Names and definitions',
-  rows: [
-    [
-      key('1'), key('2'), key('3'), key('4'), key('5'),
-      key('6'), key('7'), key('8'), key('9'), key('0'),
-      { ...defineKey, width: 2 },
-      { latex: '#?_{#?}', insert: '_{#?}', tooltip: 'subscript', class: 'small' },
-    ],
-    'abcdefghijklm'.split('').map(letterKey),
-    'nopqrstuvwxyz'.split('').map(letterKey),
-    [
-      greekKey('alpha'), greekKey('beta'), greekKey('gamma', 'Gamma'),
-      greekKey('delta', 'Delta'), greekKey('epsilon'), greekKey('zeta'),
-      greekKey('eta'), greekKey('theta', 'Theta'), greekKey('iota'),
-      greekKey('kappa'), greekKey('lambda', 'Lambda'), greekKey('mu'),
-      greekKey('nu'),
-    ],
-    [
-      greekKey('xi', 'Xi'), greekKey('omicron'), greekKey('pi', 'Pi'),
-      greekKey('rho'), greekKey('sigma', 'Sigma'), greekKey('tau'),
-      greekKey('upsilon', 'Upsilon'), greekKey('phi', 'Phi'), greekKey('chi'),
-      greekKey('psi', 'Psi'), greekKey('omega', 'Omega'),
-      { label: '-', key: '-', tooltip: 'hyphen in a serif name, minus outside one' },
-      { label: '_', key: '_', tooltip: 'underscore in a serif name, subscript outside one' },
-    ],
-    [
-      {
-        label: '<span style="font-family:Georgia,serif;font-size:0.9em">abc</span>',
-        command: ['switchMode', 'text'],
-        tooltip: 'serif text, for names longer than one letter (Ctrl+T)',
-      },
-      { label: '[left]', tooltip: 'move left' },
-      { label: '[right]', tooltip: 'move right' },
-      { label: '[backspace]', tooltip: 'backspace', class: 'action hide-shift calc-backspace' },
-      { label: '[return]', tooltip: 'new line' },
-    ],
+  layers: [
+    defnLayer({
+      id: DEFN_LOWER,
+      rows: letterRows(LATIN_ROWS, (letter) => key(letter)),
+      shiftTo: DEFN_UPPER,
+      greekTo: DEFN_GREEK,
+    }),
+    defnLayer({
+      id: DEFN_UPPER,
+      rows: letterRows(LATIN_ROWS, (letter) => key(letter.toUpperCase())),
+      shiftTo: DEFN_LOWER,
+      greekTo: DEFN_GREEK_UPPER,
+      shiftActive: true,
+    }),
+    defnLayer({
+      id: DEFN_GREEK,
+      rows: letterRows(GREEK_ROWS, (name) => key(`\\${name}`)),
+      shiftTo: DEFN_GREEK_UPPER,
+      greekTo: DEFN_LOWER,
+      greekActive: true,
+    }),
+    defnLayer({
+      id: DEFN_GREEK_UPPER,
+      rows: letterRows(GREEK_CAPITAL_ROWS, (name) => key(`\\${name}`)),
+      shiftTo: DEFN_GREEK,
+      greekTo: DEFN_UPPER,
+      shiftActive: true,
+      greekActive: true,
+    }),
   ],
 };
 

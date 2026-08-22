@@ -320,35 +320,69 @@ else failures.push('expression tab is missing a value key');
 if (!exprKeys.includes(',') && !EXPR_LAYOUT.rows.flat().some((entry) => entry.command)) passed++;
 else failures.push('expression tab should carry no comma and no serif toggle');
 
-// Naming is its own tab: every letter a name can start with, both alphabets,
-// the digits, and the two operators that introduce a name.
-const defnCaps = DEFN_LAYOUT.rows.flat();
-const defnKeys = defnCaps.map((entry) => entry.latex ?? entry.key ?? entry.label);
-if ('abcdefghijklmnopqrstuvwxyz'.split('').every((letter) => defnKeys.includes(letter))) passed++;
+// Naming is its own tab, laid out like a QWERTY keyboard across four layers:
+// case and alphabet are separate axes, each with its own shift.
+const defnLayer = (id) => DEFN_LAYOUT.layers.find((layer) => layer.id === id);
+const layerKeys = (id) => defnLayer(id).rows.flat()
+  .map((entry) => entry.latex ?? entry.key ?? entry.label);
+
+if (DEFN_LAYOUT.layers.length === 4
+  && ['defn-lower', 'defn-upper', 'defn-greek', 'defn-greek-upper']
+    .every((id) => defnLayer(id))) passed++;
+else failures.push('definition tab should have a layer per case-and-alphabet pair');
+
+// QWERTY order, not alphabetical — the point of the change.
+const homeRow = defnLayer('defn-lower').rows[2]
+  .filter((entry) => entry.latex).map((entry) => entry.latex).join('');
+if (homeRow === 'asdfghjkl') passed++;
+else failures.push(`definition home row should be QWERTY: ${homeRow}`);
+const greekHomeRow = defnLayer('defn-greek').rows[2]
+  .filter((entry) => entry.latex).map((entry) => entry.latex).join(' ');
+if (greekHomeRow.startsWith('\\alpha \\sigma \\delta')) passed++;
+else failures.push(`greek layer should follow the same positions: ${greekHomeRow}`);
+
+if ('abcdefghijklmnopqrstuvwxyz'.split('')
+  .every((letter) => layerKeys('defn-lower').includes(letter))) passed++;
 else failures.push('definition tab is missing a latin letter');
+if ('ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('')
+  .every((letter) => layerKeys('defn-upper').includes(letter))) passed++;
+else failures.push('definition tab is missing an uppercase letter');
 if (['\\alpha', '\\beta', '\\gamma', '\\pi', '\\sigma', '\\omega', '\\theta', '\\lambda']
-  .every((letter) => defnKeys.includes(letter))) passed++;
+  .every((letter) => layerKeys('defn-greek').includes(letter))) passed++;
 else failures.push('definition tab is missing a greek letter');
-if ('0123456789'.split('').every((digit) => defnKeys.includes(digit))) passed++;
-else failures.push('definition tab is missing a digit');
-if (defnKeys.includes('\\coloneq') && defnKeys.includes('#?_{#?}')
-  && defnKeys.includes('-') && defnKeys.includes('_')) passed++;
-else failures.push('definition tab should carry :=, subscript, hyphen and underscore');
+// Exactly the eleven that have a capital of their own; the rest stay blank
+// rather than becoming a Latin capital, which would be a different name.
+const greekCapitals = defnLayer('defn-greek-upper').rows.slice(1, 4).flat()
+  .map((entry) => entry.latex).filter(Boolean);
+if (greekCapitals.length === 11 && greekCapitals.includes('\\Gamma')
+  && greekCapitals.includes('\\Omega') && !greekCapitals.includes('\\Alpha')) passed++;
+else failures.push(`greek capitals should be the eleven real ones: ${greekCapitals.join(' ')}`);
+
+// Every layer keeps the same non-letter keys, so switching moves nothing.
+const commonKeys = ['0', '9', '\\coloneq', '#?_{#?}', '-', '_'];
+if (['defn-lower', 'defn-upper', 'defn-greek', 'defn-greek-upper'].every((id) => (
+  commonKeys.every((expected) => layerKeys(id).includes(expected))
+))) passed++;
+else failures.push('every definition layer should carry the digits and name operators');
 // Subscript belongs to naming, not to arithmetic.
 if (!exprKeys.includes('#?_{#?}')) passed++;
 else failures.push('subscript should have moved off the expression tab');
-// Uppercase is reachable by long press rather than by a row of its own.
-const upperVariants = defnCaps.filter((entry) => entry.variants?.length);
-if (upperVariants.length >= 26
-  && defnCaps.find((entry) => entry.latex === 'a')?.variants?.includes('A')
-  && defnCaps.find((entry) => entry.latex === '\\gamma')?.variants?.includes('\\Gamma')) passed++;
-else failures.push('definition tab should reach uppercase through keycap variants');
+// Each shift toggles one axis and leaves the other alone.
+const shiftTarget = (id, label) => defnLayer(id).rows.flat()
+  .find((entry) => entry.label === label)?.layer;
+if (shiftTarget('defn-lower', '⇧') === 'defn-upper'
+  && shiftTarget('defn-upper', '⇧') === 'defn-lower'
+  && shiftTarget('defn-greek', '⇧') === 'defn-greek-upper'
+  && shiftTarget('defn-lower', 'α') === 'defn-greek'
+  && shiftTarget('defn-greek', 'α') === 'defn-lower'
+  && shiftTarget('defn-upper', 'α') === 'defn-greek-upper') passed++;
+else failures.push('the two shifts should toggle case and alphabet independently');
 // A hyphen or underscore in a name only works in the serif channel, so the
 // toggle has to be within reach of the keys that need it.
-if (DEFN_LAYOUT.rows.flat().some((entry) => (
+if (DEFN_LAYOUT.layers.every((layer) => layer.rows.flat().some((entry) => (
   Array.isArray(entry.command) && entry.command[0] === 'switchMode'
-))) passed++;
-else failures.push('definition tab should expose the serif toggle');
+)))) passed++;
+else failures.push('every definition layer should expose the serif toggle');
 if (relKeys.filter((entry) => entry === '=').length === 1) passed++;
 else failures.push('relation tab should carry exactly one equals key');
 

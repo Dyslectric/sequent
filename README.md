@@ -20,7 +20,7 @@ npm install
 npm run dev
 ```
 
-`npm test` runs the evaluation-core tests (4,154 cases, no browser needed).
+`npm test` runs the evaluation-core tests (4,158 cases, no browser needed).
 
 `npm run fuzz` runs deterministic property fuzzing over domain-scoped chain
 layout, formatting round trips, incomplete editor input, and exact equality,
@@ -213,10 +213,14 @@ the logical connectives. **defn** names things. Then **{∈}**, **ε–δ**, **�
 and **grp** carry sets, analysis, topology and algebra, with MathLive's own
 **abc** and **greek** tabs still there behind them.
 
-**defn** holds both alphabets, the digits, `:=`, the subscript operator, and
-the hyphen and underscore that a longer name is built from. Uppercase is a
-long press rather than a row of its own — `A` on `a`, `Γ` on `γ` — which is
-what fits all of it on one tab.
+**defn** is a QWERTY keyboard with two shifts. `⇧` changes case and `α`
+changes alphabet, so the four combinations are four layers and each shift only
+ever toggles its own axis. Greek sits on the positions a Greek keyboard uses —
+`a` is α, `p` is π — and the eleven letters with a capital of their own are the
+only ones the Greek shift fills in; the rest are written with a Latin capital
+and are left blank rather than becoming a different name. The digits, `:=`, the
+subscript operator, the hyphen, the underscore and the serif toggle are on
+every layer, so switching never moves anything under the finger.
 
 `-` and `_` insert the bare characters, so each means whatever the channel it
 is typed into means: a hyphen and an underscore inside a serif name, a minus

@@ -469,9 +469,18 @@ body {
    root. Keep the backdrop spacing and let the plate fill it exactly. */
 .keyboard-dock .MLK__plate { top: 0; }
 
+/* The two shifts on the `defn` tab switch layer rather than using MathLive's
+   own shift state, so nothing marks them as engaged. Without this the Greek
+   layer looks exactly like the Latin one apart from the letters themselves. */
+.keyboard-dock .defn-active {
+  background: var(--accent);
+  color: #fff;
+}
+
 /* The stock Backspace key reserves opposite corners for Backspace and its
-   shifted clear action. The calc layer has no Shift key, so centre its primary
-   glyph and give it the same 24px scale used for MathLive's larger icons. */
+   shifted clear action. Our layers drive case through explicit layers rather
+   than MathLive's shift state, so centre the primary glyph and give it the
+   same 24px scale used for MathLive's larger icons. */
 .keyboard-dock .calc-backspace {
   align-items: center;
   justify-content: center;

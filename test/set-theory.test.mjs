@@ -69,6 +69,10 @@ check('undefined set expression stays set-valued', ['A\\cup B'], (result) => (
   result.kind === 'set' && result.undefinedNames.join(',') === 'A,B'
     ? null : 'expected a set expression with A and B undefined'
 ));
+check('a named extensional set lemma is expanded before eager evaluation', [
+  'L(X,A):=X\\in\\mathcal{P}(A)\\iff X\\subseteq A',
+  'L(X,A)',
+], proved);
 
 console.log('== cardinality ==');
 /**
@@ -89,6 +93,28 @@ check('power set', ['A:=\\{1,2\\}', '\\operatorname{card}(\\mathcal{P}(A))=4'], 
 check('power set is exponential',
   ['A:=\\{1,2,3\\}',
     '\\operatorname{card}(\\mathcal{P}(A))=2^{\\operatorname{card}(A)}'], proved);
+check('finite-domain set-builder count', [
+  '\\operatorname{card}(\\{x\\in\\{1,2,3,4\\}\\mid x>2\\})=2',
+], proved);
+check('wrong finite-domain set-builder count is false', [
+  '\\operatorname{card}(\\{x\\in\\{1,2,3,4\\}\\mid x>2\\})=3',
+], exactFalse);
+check('empty finite-domain set-builder counts zero', [
+  '\\operatorname{card}(\\{x\\in\\{1,2,3\\}\\mid x>3\\})=0',
+], proved);
+check('named finite-domain set-builder count', [
+  'S:=\\{x\\in\\{1,2,3,4\\}\\mid x>2\\}',
+  '\\operatorname{card}(S)=2',
+], proved);
+check('bars count a finite-domain set builder', [
+  '\\left|\\{x\\in\\{1,2,3\\}\\mid x\\ne2\\}\\right|=2',
+], proved);
+check('an unrestricted builder still has no finite count', [
+  '\\operatorname{card}(\\{x\\mid x>0\\})=2',
+], unknown);
+check('an unresolved finite-domain builder predicate stays undecided', [
+  '\\operatorname{card}(\\{x\\in\\{1,2\\}\\mid y>0\\})=2',
+], unknown);
 
 // Cantor's theorem, on the finite sets where it is a count rather than a
 // diagonal argument.
@@ -119,6 +145,48 @@ check('cardinality of an expression', ['\\operatorname{card}(2\\times3)=1'], unk
 check('cardinality of a bare variable', ['\\operatorname{card}(x)=1'], unknown);
 // Multiplication inside a call still means multiplication.
 check('numeric product in a call', ['f(x):=x+1', 'f(2\\times3)=7'], proved);
+
+console.log('== cardinality written as bars ==');
+/**
+ * `|A|` and `|x|` are the same two characters, and Compute Engine reads both
+ * as `Abs`. Which one is meant is decided from the operand: a set is counted,
+ * anything else keeps its absolute value. Getting this wrong in either
+ * direction is a silent wrong answer, so both directions are pinned here.
+ */
+check('bars count a literal set', ['\\left|\\{1,2,3\\}\\right|=3'], proved);
+check('bars count a named set', ['A:=\\{1,2,3\\}', '\\left|A\\right|=3'], proved);
+check('bars without \\left and \\right', ['A:=\\{1,2,3\\}', '|A|=3'], proved);
+check('a wrong count is false', ['A:=\\{1,2,3\\}', '\\left|A\\right|=4'], exactFalse);
+check('bars count a union', ['\\left|\\{1,2\\}\\cup\\{2,3\\}\\right|=3'], proved);
+check('bars count a power set', ['A:=\\{1,2\\}', '\\left|\\mathcal{P}(A)\\right|=4'], proved);
+check('bars agree with card', [
+  'A:=\\{1,2,3\\}',
+  '\\left|A\\right|=\\operatorname{card}(A)',
+], proved);
+check('Cantor, written with bars', [
+  'A:=\\{1,2\\}',
+  '\\left|A\\right|<\\left|\\mathcal{P}(A)\\right|',
+], proved);
+
+// The other direction: bars around anything that is not a set are still an
+// absolute value, and must not start counting.
+check('bars around a negative number', ['\\left|-5\\right|=5'], proved);
+check('bars around an arithmetic expression', ['\\left|3-5\\right|=2'], proved);
+check('bars around a number are not a count', ['\\left|6\\right|=1'], exactFalse);
+check('bars around a variable stay absolute value', ['\\left|x\\right|\\ge 0'], proved);
+check('absolute value keeps its sign behaviour', ['\\left|x\\right|=\\left|-x\\right|'], proved);
+
+// An uncountable set has no size here, and saying so stays the answer.
+check('bars around an infinite set', ['\\left|\\mathbb{R}\\right|=1'], unknown);
+
+// An undefined name is a free variable, not a set nobody has written down
+// yet, so the bars are an absolute value and the claim is a false universal
+// one — exactly as `|x| = 1` is. `card(S)` is the way to ask the other
+// question, and it stays undecided.
+check('bars around an undefined name read as absolute value',
+  ['\\left|S\\right|=1'], exactFalse);
+check('card of an undefined name is still undecided',
+  ['\\operatorname{card}(S)=1'], unknown);
 check('numeric product alone', ['2\\times3=6'], proved);
 
 // `|x|` is still absolute value and must not be read as a count.
@@ -374,6 +442,35 @@ check('symbolic natural-domain subset does not become vacuously true', [
 check('symbolic natural-domain equality does not become vacuously true', [
   'A:=\\{x\\in\\mathbb{N}\\mid x>0\\}', 'A=\\varnothing',
 ], unknown);
+
+console.log('== primality ==');
+// `\mathbb{P}` is the application's own set: Compute Engine parses it as a
+// bare symbol and has nothing to say about it, so every answer below is one
+// this code found and this code has to justify.
+for (const [label, proposition, expected] of [
+  ['two is prime', '2\\in\\mathbb{P}', true],
+  ['seven is prime', '7\\in\\mathbb{P}', true],
+  ['ninety-seven is prime', '97\\in\\mathbb{P}', true],
+  ['a five-digit prime', '104729\\in\\mathbb{P}', true],
+  ['a Carmichael number is not prime', '561\\notin\\mathbb{P}', true],
+  ['a square is not prime', '9\\notin\\mathbb{P}', true],
+  ['one is not prime', '1\\notin\\mathbb{P}', true],
+  ['zero is not prime', '0\\notin\\mathbb{P}', true],
+  ['a composite claimed prime', '8\\in\\mathbb{P}', false],
+  ['a prime claimed composite', '7\\notin\\mathbb{P}', false],
+]) check(label, [proposition], exactTruth(expected));
+
+// A statement about an unknown is not an invitation to guess at it, and a
+// non-integer is not a question this set answers.
+check('primality of an unknown stays unknown', ['x\\in\\mathbb{P}'], unknown);
+check('primality of a fraction stays unknown', ['\\frac{1}{2}\\in\\mathbb{P}'], unknown);
+
+check('a proved primality row carries a checked certificate', ['7\\in\\mathbb{P}'], (result) => {
+  if (result.proofStatus !== 'available') return 'expected a trace';
+  const [step] = result.proof.steps;
+  if (step?.rule !== 'arithmetic.primality') return `cited ${step?.rule}`;
+  return result.proof.trust === 'certified' ? null : `trust is ${result.proof.trust}`;
+});
 
 console.log('== symbolic set algebra, implication, and equivalence ==');
 for (const [label, proposition] of [

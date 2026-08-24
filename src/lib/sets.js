@@ -58,6 +58,243 @@ export function standardNumericDomain(expr) {
   return NUMERIC_DOMAINS.get(expr?.symbol) ?? null;
 }
 
+/**
+ * The two sets whose membership question, for a radical, is one integer test.
+ *
+ * A non-negative integer's n-th root is rational exactly when it is an
+ * integer, so `\sqrt{2} \notin \mathbb{Q}` and `\sqrt{2} \notin \mathbb{Z}`
+ * have the same one-line proof. The reals and the naturals are left out: the
+ * first is no question at all, and the second differs at zero.
+ */
+const RATIONALITY_SETS = new Set(['RationalNumbers', 'Integers']);
+
+/** A non-negative integer literal as a BigInt, or null. */
+function nonNegativeInteger(value) {
+  if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < 0) return null;
+  return BigInt(value);
+}
+
+/**
+ * `\sqrt[n]{k}` split into its radicand and index, for a non-negative integer
+ * radicand and a small positive integer index. Anything else is not this test.
+ *
+ * Read from the JSON rather than the operator, because `\sqrt{2}` arrives as a
+ * *number literal* — `operator` is `Real` and `nops` is zero — while
+ * `\sqrt[3]{5}` arrives as an ordinary `Root` application. The serialization
+ * is the one place the two spellings look alike.
+ */
+export function integerRadical(expr) {
+  const json = expr?.json;
+  if (!Array.isArray(json)) return null;
+  if (json[0] === 'Sqrt' && json.length === 2) {
+    const radicand = nonNegativeInteger(json[1]);
+    return radicand === null ? null : { radicand, index: 2n };
+  }
+  if (json[0] === 'Root' && json.length === 3) {
+    const radicand = nonNegativeInteger(json[1]);
+    const index = nonNegativeInteger(json[2]);
+    if (radicand === null || index === null || index < 1n || index > 64n) return null;
+    return { radicand, index };
+  }
+  return null;
+}
+
+/**
+ * The exact n-th root of a non-negative integer, or null when there is none.
+ *
+ * Binary search on the integers: no floating point is involved, so the answer
+ * is a fact about the integers rather than about a rounding mode. This is the
+ * whole of the irrationality argument — `\sqrt{2}` is irrational because 2 is
+ * not a perfect square, and every classical proof of that is a proof of this.
+ */
+export function exactIntegerRoot(radicand, index) {
+  if (radicand < 2n) return radicand;
+  let low = 1n;
+  let high = radicand;
+  while (low <= high) {
+    const middle = (low + high) / 2n;
+    const power = middle ** index;
+    if (power === radicand) return middle;
+    if (power < radicand) low = middle + 1n;
+    else high = middle - 1n;
+  }
+  return null;
+}
+
+/**
+ * The certificate behind a radical membership, or null when the line is not
+ * one.
+ *
+ * The lowering above settles these statements and, like the rest of the set
+ * lowering, says nothing about how. This is the one it can say something
+ * about, and the row that most needed it: `\sqrt{2} \notin \mathbb{Q}` was
+ * proved with no trace at all, which made the easiest proof in the application
+ * also its worst-documented one.
+ */
+export function radicalMembershipCertificate(expr) {
+  if (expr?.operator !== 'Element' && expr?.operator !== 'NotElement') return null;
+  if (expr.nops !== 2 || !RATIONALITY_SETS.has(expr.ops[1]?.symbol)) return null;
+  const radical = integerRadical(expr.ops[0]);
+  if (!radical) return null;
+  const root = exactIntegerRoot(radical.radicand, radical.index);
+  return {
+    rule: 'arithmetic.integer-root',
+    data: {
+      radicandLatex: String(radical.radicand),
+      indexLatex: String(radical.index),
+      rootLatex: root === null ? null : String(root),
+    },
+  };
+}
+
+/* -------------------------------- primality ------------------------------- */
+
+/**
+ * `\mathbb{P}`, which Compute Engine has no meaning for.
+ *
+ * It parses as a bare symbol, so primality is the application's to decide and
+ * the application's to justify. `7\in\mathbb{P}` was undecided until this
+ * landed — the last statement in the catalogue the prover could not reach at
+ * all rather than merely could not check.
+ */
+export const PRIME_SETS = new Set(['P_doublestruck', 'Primes']);
+
+/** The largest integer this will factor, which is what bounds trial division. */
+const MAX_PRIMALITY = 10n ** 12n;
+
+const modPow = (base, exponent, modulus) => {
+  let result = 1n;
+  let b = base % modulus;
+  let e = exponent;
+  while (e > 0n) {
+    if (e & 1n) result = (result * b) % modulus;
+    b = (b * b) % modulus;
+    e >>= 1n;
+  }
+  return result;
+};
+
+/** The complete factorisation of `n` with multiplicity, by trial division. */
+function factorize(n) {
+  const factors = [];
+  let rest = n;
+  for (let d = 2n; d * d <= rest; d += d === 2n ? 1n : 2n) {
+    while (rest % d === 0n) {
+      factors.push(d);
+      rest /= d;
+    }
+  }
+  if (rest > 1n) factors.push(rest);
+  return factors;
+}
+
+/** The smallest proper divisor above 1, or null when `n` is prime. */
+function smallestFactor(n) {
+  if (n % 2n === 0n) return n === 2n ? null : 2n;
+  for (let d = 3n; d * d <= n; d += 2n) if (n % d === 0n) return d;
+  return null;
+}
+
+/**
+ * A Pratt certificate for `p`, as a list of entries in ascending order.
+ *
+ * Each entry names a prime, a primitive root modulo it, and the complete
+ * factorisation of that prime minus one; every factor named appears as an
+ * earlier entry. That is what makes the certificate self-contained: a checker
+ * can walk it forwards, believing nothing it has not already established.
+ *
+ * Finding the root is the search this tier is named for, and it is the only
+ * part of Tier 1 that searches. Checking it is six lines of modular
+ * exponentiation, which is the whole point.
+ */
+function prattCertificate(p, into = new Map()) {
+  if (into.has(p)) return into;
+  if (p === 2n) {
+    into.set(p, { numberLatex: '2', rootLatex: null, factorsLatex: [] });
+    return into;
+  }
+  const factors = factorize(p - 1n);
+  const distinct = [...new Set(factors)];
+  for (const q of distinct) prattCertificate(q, into);
+  for (let root = 2n; root < p; root += 1n) {
+    if (modPow(root, p - 1n, p) !== 1n) continue;
+    if (distinct.some((q) => modPow(root, (p - 1n) / q, p) === 1n)) continue;
+    into.set(p, {
+      numberLatex: String(p),
+      rootLatex: String(root),
+      factorsLatex: factors.map(String),
+    });
+    return into;
+  }
+  // Unreachable for a prime, and the honest answer for anything else.
+  return null;
+}
+
+/** A literal integer, or null. `\mathbb{P}` has nothing to say about `x`. */
+function integerLiteral(expr) {
+  const json = expr?.json;
+  if (typeof json === 'number' && Number.isInteger(json)) return BigInt(json);
+  if (typeof json === 'string' && /^-?\d+$/.test(json)) return BigInt(json);
+  return null;
+}
+
+/**
+ * Whether a literal integer is prime, or null when the question does not
+ * arise — a symbol, a non-integer, or a number too large to factor here.
+ */
+export function isPrimeLiteral(expr) {
+  const value = integerLiteral(expr);
+  if (value === null || value > MAX_PRIMALITY) return null;
+  if (value < 2n) return false;
+  return smallestFactor(value) === null;
+}
+
+/**
+ * The certificate behind a primality claim, or null when the line is not one.
+ *
+ * Both directions carry a witness, because both directions have one. A prime
+ * carries a Pratt certificate; a composite carries a proper divisor, which is
+ * cheaper to check than anything else in this file.
+ */
+export function primeMembershipCertificate(expr) {
+  if (expr?.operator !== 'Element' && expr?.operator !== 'NotElement') return null;
+  if (expr.nops !== 2 || !PRIME_SETS.has(expr.ops[1]?.symbol)) return null;
+  const value = integerLiteral(expr.ops[0]);
+  if (value === null || value > MAX_PRIMALITY) return null;
+  if (value < 2n) {
+    return {
+      rule: 'arithmetic.primality',
+      data: { numberLatex: String(value), factorLatex: null, prattLatex: null },
+    };
+  }
+  const factor = smallestFactor(value);
+  if (factor !== null) {
+    return {
+      rule: 'arithmetic.primality',
+      data: { numberLatex: String(value), factorLatex: String(factor), prattLatex: null },
+    };
+  }
+  const built = prattCertificate(value);
+  if (!built) return null;
+  return {
+    rule: 'arithmetic.primality',
+    data: {
+      numberLatex: String(value),
+      factorLatex: null,
+      prattLatex: [...built.values()].sort((a, b) => (
+        BigInt(a.numberLatex) < BigInt(b.numberLatex) ? -1 : 1
+      )),
+    },
+  };
+}
+
+/** Whether `\sqrt[n]{k}` is rational, or null when the element is not one. */
+function isRationalRadical(expr) {
+  const radical = integerRadical(expr);
+  if (!radical) return null;
+  return exactIntegerRoot(radical.radicand, radical.index) !== null;
+}
+
 const LOGICAL = new Set(['And', 'Or', 'Not', 'Implies', 'Equivalent']);
 const MAX_POWER_SET_BASE_SIZE = 8;
 const MAX_CARTESIAN_PRODUCT_SIZE = 256;
@@ -93,7 +330,11 @@ export function setBuilderParts(expr) {
 export function isSetExpression(expr, definitions = new Map(), seen = new Set()) {
   if (!expr) return false;
   if (expr.symbol) {
-    if (STANDARD_SETS.has(expr.symbol)) return true;
+    // `\mathbb{P}` is a set the application knows about and Compute Engine
+    // does not, so it is named here rather than in `STANDARD_SETS` — that set
+    // is the list of domains Compute Engine may be asked to decide, and this
+    // is precisely the one it may not.
+    if (STANDARD_SETS.has(expr.symbol) || PRIME_SETS.has(expr.symbol)) return true;
     const definition = definitions.get(expr.symbol);
     if (definition?.kind !== 'set' || seen.has(expr.symbol)) return setType(expr);
     return true;
@@ -234,7 +475,42 @@ function standardSubset(left, right) {
  */
 export function materializeFiniteSet(ce, expr, definitions, seen = new Set()) {
   const resolved = resolveDefinedSet(expr, definitions, seen);
-  if (!resolved || setBuilderParts(resolved)) return null;
+  if (!resolved) return null;
+
+  // A builder over a concrete finite domain is itself a concrete finite set.
+  // Enumerate the domain and retain exactly the members whose specialized
+  // predicate can be decided. An unrestricted builder, or even one uncertain
+  // predicate value, still abstains: silently dropping an unknown member would
+  // make every cardinality comparison below it unsound.
+  const builder = setBuilderParts(resolved);
+  if (builder) {
+    if (!builder.domain) return null;
+    const domain = materializeFiniteSet(
+      ce, builder.domain, definitions, new Set(seen)
+    );
+    if (!domain) return null;
+
+    const items = domain.symbol === 'EmptySet' ? [] : domain.ops;
+    const selected = [];
+    for (const item of items) {
+      let predicate;
+      try {
+        predicate = builder.predicate.subs({ [builder.binder]: item });
+      } catch {
+        return null;
+      }
+      const lowered = lowerNode(
+        ce, predicate, definitions, new Set(seen), undefined, new Set()
+      );
+      if (lowered.unresolvedSets || lowered.unsafeEvaluation) return null;
+      let verdict;
+      try { verdict = lowered.expr.evaluate(); } catch { return null; }
+      if (verdict.symbol === 'True') selected.push(item);
+      else if (verdict.symbol !== 'False') return null;
+    }
+    if (selected.length === 0) return ce.box('EmptySet');
+    try { return ce.box(['Set', ...selected]).evaluate(); } catch { return null; }
+  }
 
   if (resolved.symbol === 'EmptySet') return resolved;
 
@@ -505,8 +781,27 @@ function membership(
   // numeric witness is substituted Compute Engine decides them exactly.
   const standard = setExpr?.symbol && STANDARD_SETS.has(setExpr.symbol);
   const atom = ce.box(['Element', element, setExpr]);
+
+  // `\mathbb{P}` is not one of Compute Engine's sets, so it arrives as a bare
+  // symbol and would otherwise stay an opaque atom for ever. Only a literal
+  // integer is settled here: `x\in\mathbb{P}` is a real statement about `x`
+  // and must not be guessed at.
+  if (setExpr?.symbol && PRIME_SETS.has(setExpr.symbol)) {
+    const prime = isPrimeLiteral(element);
+    if (prime !== null) return { expr: truth(ce, prime), unresolvedSets: false };
+    return { expr: atom, unresolvedSets: true };
+  }
   if (standard) {
     const hasUnknowns = (element.unknowns?.length ?? 0) > 0;
+    // `\sqrt[n]{k}` is rational exactly when `k` is a perfect n-th power, and
+    // integer if it is rational at all. Compute Engine settles the square-root
+    // case and gives up on the others, so this decides them all alike — and,
+    // unlike the evaluation below, it does so by a test the reader can be told
+    // about and the kernel can re-run.
+    if (!hasUnknowns && RATIONALITY_SETS.has(setExpr.symbol)) {
+      const rational = isRationalRadical(element);
+      if (rational !== null) return { expr: truth(ce, rational), unresolvedSets: false };
+    }
     if (!hasUnknowns) {
       try {
         const evaluated = atom.evaluate();
@@ -718,6 +1013,25 @@ function lowerNode(ce, expr, definitions, seen = new Set(), makeWitness, realSym
     );
   }
 
+/**
+ * A quantifier body, re-read outside the quantifier's scope.
+ *
+ * Stripping `\forall x \in \mathbb{R}` leaves the body still boxed in the
+ * scope the quantifier opened, where `x` is a bound symbol of unknown type.
+ * Compute Engine will not collect `x^2 - x^2` there, because nothing says the
+ * symbol commutes — which silently cost every multivariable prover that
+ * verifies its guess symbolically. Re-boxing from the JSON puts the freed
+ * variables back in the sheet's own scope, where they are ordinary numeric
+ * unknowns, exactly as they are when the reader writes the body on its own.
+ */
+function unbind(ce, body) {
+  try {
+    return ce.box(body.json);
+  } catch {
+    return body;
+  }
+}
+
   // Universal quantification over a set is exactly a pointwise implication.
   // This is also how the rest of the app interprets free numeric variables.
   if (op === 'ForAll' && expr.nops === 2) {
@@ -738,7 +1052,7 @@ function lowerNode(ce, expr, definitions, seen = new Set(), makeWitness, realSym
       );
       if (numeric) {
         if (numeric !== 'complex') realSymbols.add(binding.ops[0].symbol);
-        return lowerNode(ce, body, definitions, seen, makeWitness, realSymbols);
+        return lowerNode(ce, unbind(ce, body), definitions, seen, makeWitness, realSymbols);
       }
     }
     if (binding?.operator === 'Element' && binding.nops === 2 && binding.ops[0]?.symbol) {
@@ -752,7 +1066,7 @@ function lowerNode(ce, expr, definitions, seen = new Set(), makeWitness, realSym
       };
     }
     if (binding?.symbol) {
-      return lowerNode(ce, body, definitions, seen, makeWitness, realSymbols);
+      return lowerNode(ce, unbind(ce, body), definitions, seen, makeWitness, realSymbols);
     }
   }
 
@@ -840,7 +1154,7 @@ function inferSetSymbols(expr, definitions, out = new Set()) {
  * statement unresolved, because this app has no cardinal arithmetic and
  * guessing is worse than saying so.
  */
-function resolveCardinalities(ce, expr, definitions, state) {
+export function resolveCardinalities(ce, expr, definitions, state) {
   if (!expr) return expr;
   if (expr.operator === 'SetCardinality' && expr.nops === 1) {
     const inner = resolveCardinalities(ce, expr.ops[0], definitions, state);

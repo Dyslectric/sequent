@@ -37,6 +37,7 @@ import {
   PRIME_SETS,
   primeMembershipCertificate,
   QUANTIFIERS,
+  quantifierMissingComma,
   radicalMembershipCertificate,
   reinterpretCartesianProducts,
   resolveCardinalities,
@@ -1221,6 +1222,15 @@ export class Sheet {
     const parseError = findError(expr.json);
     if (parseError) {
       return { kind: 'error', message: this.registry.toDisplayName(parseError) };
+    }
+
+    // Before any pass runs, because every one of them would answer — and the
+    // answer would be `true`, for a statement the reader did not write.
+    if (quantifierMissingComma(expr.json)) {
+      return {
+        kind: 'error',
+        message: 'a quantifier needs a comma between its domain and its body',
+      };
     }
 
     const partial = lowerPartialDerivativesAt(this.ce, expr);

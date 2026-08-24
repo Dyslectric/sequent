@@ -1076,6 +1076,55 @@ check('empty line', [''], (r) => r.kind === 'empty' ? null : 'expected empty');
 check('division by zero', ['\\frac{1}{0}'], (r) => (r.kind === 'value' || r.kind === 'error') ? null : 'expected value or error');
 check('unbalanced is not fatal', ['2+'], (r) => r.kind !== undefined ? null : 'expected some result');
 
+/**
+ * A quantifier with no comma is refused, not answered.
+ *
+ * Without the comma Compute Engine folds the body into the *domain* and leaves
+ * the literal `True` to prove, so every one of these came back **proved true**
+ * — no counterexample, no hedge, for a statement nobody wrote. They are all
+ * false. Refusing them is the point; what they must never be is `true`.
+ */
+for (const line of [
+  '\\forall x\\in\\mathbb{N} x<0',
+  '\\forall x\\in\\mathbb{N} x>5',
+  '\\forall x\\in\\mathbb{R} x^2<0',
+  '\\forall n\\in\\mathbb{N} n^2>n',
+  '\\exists x\\in\\mathbb{N} x<0',
+  '\\forall x\\in\\{1,2,3\\} x<0',
+  // A comma on the outer quantifier does not save the inner one.
+  '\\forall x\\in\\mathbb{N}, \\exists y\\in\\mathbb{N} y>x',
+  '\\forall x\\in\\mathbb{N} x^2\\ge 0\\wedge x\\ge 0',
+]) {
+  check(`missing comma is refused: ${line}`, [line], (r) => (
+    r.kind === 'error' ? null : `expected an error, got ${r.kind} ${r.value}`
+  ));
+}
+
+/**
+ * And the shapes that legitimately look similar are untouched.
+ *
+ * The signature of the misparse is a tuple in a binding's *domain*. A tuple in
+ * the *variable* is ordinary — `\forall (x,y)\in A\times B` binds a pair — and
+ * a Cartesian-product domain arrives as a product, never as a tuple.
+ */
+for (const line of [
+  '\\forall x\\in\\mathbb{N}, x+1>x',
+  '\\forall x\\in\\mathbb{R}, x^2\\ge 0',
+  '\\forall x\\in\\mathbb{N}: x\\ge 0',
+  '\\forall x\\in\\mathbb{R}, \\top',
+  '\\forall (x,y)\\in A\\times B, x=x',
+  '\\forall x\\in\\mathbb{R}, (x,x)=(x,x)',
+  '\\forall x\\in\\{1,2,3\\}, \\exists y\\in\\{1,2,3,4\\}, y>x',
+]) {
+  check(`still accepted: ${line}`, [line], (r) => (
+    r.kind === 'error' ? `refused a well-formed line: ${r.message}` : null
+  ));
+}
+
+check('a false quantified statement is still refuted rather than refused',
+  ['\\forall x\\in\\mathbb{N}, x<0'],
+  (r) => (r.kind === 'truth' && r.value === false ? null : `expected false, got ${r.kind} ${r.value}`));
+
 console.log(`\n${passed} passed, ${failed} failed`);
 if (failures.length) {
   console.log('\nFAILURES:');

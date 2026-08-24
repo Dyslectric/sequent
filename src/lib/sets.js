@@ -16,6 +16,43 @@ export const SET_RELATIONS = new Set([
 
 export const QUANTIFIERS = new Set(['ForAll', 'Exists']);
 
+/**
+ * A quantifier whose domain swallowed its body, which is what a missing comma
+ * produces.
+ *
+ * `\forall x\in\mathbb{N} x<0` parses as
+ * `ForAll(Element(x, Less(Tuple(N, x), 0)), True)`. The body has been folded
+ * into the *domain* and what is left to prove is the literal `True` — so the
+ * line comes back **proved** for a statement nobody wrote, with no
+ * counterexample and no hedge. Five plainly false statements in a row were
+ * reported true this way.
+ *
+ * This is refused rather than left undecided, which is the opposite of what
+ * the rest of this file does. An undecided row says "nothing here could settle
+ * this", and that would be a lie: the line is a typo, the reader can fix it in
+ * one keystroke, and saying so is more useful than abstaining.
+ *
+ * The signature is a `Tuple` in the *domain* of a binding. A tuple in the
+ * *variable* is ordinary — `\forall (x,y)\in A\times B` binds a pair — and a
+ * Cartesian-product domain arrives as `Multiply`, never as a tuple. Nothing
+ * legitimate puts one where this looks.
+ */
+const containsTuple = (json) => Array.isArray(json)
+  && (json[0] === 'Tuple' || json.slice(1).some(containsTuple));
+
+const bindingSwallowedBody = (json) => Array.isArray(json)
+  && (json[0] === 'Element' && json.length === 3
+    ? containsTuple(json[2])
+    : json.slice(1).some(bindingSwallowedBody));
+
+export function quantifierMissingComma(json) {
+  if (!Array.isArray(json)) return false;
+  // Nested and sequenced quantifiers misparse the same way, so this looks at
+  // every quantifier in the expression rather than only the outermost.
+  if (QUANTIFIERS.has(json[0]) && json.length >= 2 && bindingSwallowedBody(json[1])) return true;
+  return json.slice(1).some(quantifierMissingComma);
+}
+
 const SET_OPERATORS = new Set([
   'Set', 'Union', 'Intersection', 'SetMinus', 'SymmetricDifference',
   'PowerSet', 'CartesianProduct', 'OpenBall', 'ClosedBall',

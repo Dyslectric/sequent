@@ -206,6 +206,52 @@ check('an action that escapes the module',
     'q(a,b):=\\operatorname{mod}(a+b,4)', 't(a,b):=\\operatorname{mod}(ab,4)',
     's(a,x):=\\operatorname{mod}(ax,4)', MODULE], exactFalse);
 
+console.log('== vector spaces ==');
+/**
+ * `Vec(V, p, 0, F, q, t, 0, 1, s)` is the whole claim rather than a piece of
+ * it: the vectors are an abelian group, the scalars are a *field*, and the
+ * four action axioms hold. That middle requirement is the entire difference
+ * between this and `Mdl` — ℤ/4 is a fine ring and ℤ/4 acting on itself is a
+ * fine module, but 2 has no inverse, so it is not a vector space.
+ */
+const VECTOR_SPACE = '\\mathsf{Vec}(M,p,0,R,q,t,0,1,s)';
+
+check('F₂ over itself', [...moduleOver(2, 2), VECTOR_SPACE], proved);
+check('F₃ over itself', [...moduleOver(3, 3), VECTOR_SPACE], proved);
+check('F₅ over itself', [...moduleOver(5, 5), VECTOR_SPACE], proved);
+check('textual alias',
+  [...moduleOver(3, 3), '\\operatorname{vectorspace}(M,p,0,R,q,t,0,1,s)'], proved);
+
+// The scalars have to be a field, and these are the rings that are not.
+check('ℤ/4 scalars are not a field', [...moduleOver(4, 4), VECTOR_SPACE], exactFalse);
+check('ℤ/6 scalars are not a field', [...moduleOver(6, 6), VECTOR_SPACE], exactFalse);
+check('the same data is still a module',
+  [...moduleOver(4, 4), MODULE], proved);
+
+// ℤ/4 is not a ℤ/2-space either: (1+1)·x is 0 while x + x is 2x.
+check('an action that does not distribute over scalar sums',
+  [...moduleOver(2, 4), VECTOR_SPACE], exactFalse);
+
+check('the wrong scalar unit',
+  [...moduleOver(3, 3), '\\mathsf{Vec}(M,p,0,R,q,t,0,2,s)'], exactFalse);
+check('the wrong vector zero',
+  [...moduleOver(3, 3), '\\mathsf{Vec}(M,p,1,R,q,t,0,1,s)'], exactFalse);
+check('the wrong scalar zero',
+  [...moduleOver(3, 3), '\\mathsf{Vec}(M,p,0,R,q,t,1,1,s)'], exactFalse);
+check('vectors that are not closed under addition',
+  ['M:=\\{0,1\\}', 'p(x,y):=x+y', 'R:=\\{0,1\\}',
+    'q(a,b):=\\operatorname{mod}(a+b,2)', 't(a,b):=\\operatorname{mod}(ab,2)',
+    's(a,x):=\\operatorname{mod}(ax,2)', VECTOR_SPACE], exactFalse);
+
+check('vector space on an infinite carrier',
+  ['p(x,y):=x+y', 'R:=\\{0,1\\}', 'q(a,b):=\\operatorname{mod}(a+b,2)',
+    't(a,b):=\\operatorname{mod}(ab,2)', 's(a,x):=ax',
+    '\\mathsf{Vec}(\\mathbb{Z},p,0,R,q,t,0,1,s)'], honestUnknown);
+check('vector space with a missing action',
+  [...moduleOver(3, 3).slice(0, 5), '\\mathsf{Vec}(M,p,0,R,q,t,0,1,z)'], honestUnknown);
+check('vector space with the wrong arity',
+  [...moduleOver(3, 3), '\\mathsf{Vec}(M,p,0,R,q,t,0,1)'], honestUnknown);
+
 console.log('== honest unknowns ==');
 check('module on an infinite carrier',
   ['p(x,y):=x+y', 'R:=\\{0,1\\}', 'q(a,b):=\\operatorname{mod}(a+b,2)',
@@ -223,6 +269,134 @@ check('operation is not defined', ['G:=\\{0,1\\}', '\\mathsf{Grp}(G,zz,0)'], hon
 check('operation has the wrong arity',
   ['G:=\\{0,1\\}', 'u(a):=a', '\\mathsf{Grp}(G,u,0)'], honestUnknown);
 check('carrier is not a set', ['c:=5', 'm(a,b):=a+b', '\\mathsf{Grp}(c,m,0)'], honestUnknown);
+
+console.log('== small categories ==');
+
+/**
+ * The poset 0 <= 1 <= 2 as a category, with `i -> j` encoded as `3i + j`.
+ *
+ * The encoding is the point: composition is partial, and making source and
+ * target arithmetic is what lets a sheet say so without any notion of a pair.
+ */
+const POSET = [
+  'O:=\\{0,1,2\\}',
+  'M:=\\{0,1,2,4,5,8\\}',
+  's(m):=\\lfloor m/3\\rfloor',
+  't(m):=\\operatorname{mod}(m,3)',
+  'c(f,g):=3s(f)+t(g)',
+  'i(x):=4x',
+];
+
+check('composition is well-typed', [...POSET, '\\mathsf{Cmp}(O,M,s,t,c)'], proved);
+check('identities and unit laws', [...POSET, '\\mathsf{Idt}(O,M,s,t,c,i)'], proved);
+check('associativity over composable triples', [...POSET, '\\mathsf{Aso}(M,s,t,c)'], proved);
+check('the whole category', [...POSET, '\\mathsf{Cat}(O,M,s,t,c,i)'], proved);
+
+/** A monoid is a one-object category, including one that is not a group. */
+const MONOID = [
+  'O:=\\{0\\}',
+  'M:=\\{0,1,2,3,4,5\\}',
+  's(m):=0',
+  't(m):=0',
+  'c(f,g):=\\operatorname{mod}(f\\cdot g,6)',
+  'i(x):=1',
+];
+check('multiplication mod 6 is a one-object category', [...MONOID, '\\mathsf{Cat}(O,M,s,t,c,i)'], proved);
+check('and it is not a group', [...MONOID, '\\mathsf{Inv}(M,c,1)'], exactFalse);
+
+// Each axiom must fail on its own, or the conjunction proves nothing: a `Cat`
+// that only ever answered through one of its three parts would pass every
+// positive test above.
+check('a missing composite is refused', [
+  'O:=\\{0,1,2\\}', 'M:=\\{0,1,4,5,8\\}',
+  's(m):=\\lfloor m/3\\rfloor', 't(m):=\\operatorname{mod}(m,3)',
+  'c(f,g):=3s(f)+t(g)', 'i(x):=4x',
+  '\\mathsf{Cmp}(O,M,s,t,c)',
+], exactFalse);
+check('an object with no identity is refused', [
+  'O:=\\{0,1,2,3\\}', 'M:=\\{0,1,2,4,5,8\\}',
+  's(m):=\\lfloor m/3\\rfloor', 't(m):=\\operatorname{mod}(m,3)',
+  'c(f,g):=3s(f)+t(g)', 'i(x):=4x',
+  '\\mathsf{Idt}(O,M,s,t,c,i)',
+], exactFalse);
+check('an identity that is not a unit is refused', [
+  ...POSET.slice(0, 5), 'i(x):=8',
+  '\\mathsf{Idt}(O,M,s,t,c,i)',
+], exactFalse);
+check('a non-associative composition is refused', [
+  'O:=\\{0\\}', 'M:=\\{0,1,2,3\\}', 's(m):=0', 't(m):=0',
+  'c(f,g):=\\operatorname{mod}(f+g\\cdot g,4)', 'i(x):=0',
+  '\\mathsf{Aso}(M,s,t,c)',
+], exactFalse);
+check('an endpoint outside the objects is refused', [
+  'O:=\\{0,1\\}', 'M:=\\{0,1,2,4,5,8\\}',
+  's(m):=\\lfloor m/3\\rfloor', 't(m):=\\operatorname{mod}(m,3)',
+  'c(f,g):=3s(f)+t(g)', 'i(x):=4x',
+  '\\mathsf{Cmp}(O,M,s,t,c)',
+], exactFalse);
+
+check('a category on an infinite carrier is an honest unknown', [
+  'O:=\\{0\\}', 's(m):=0', 't(m):=0', 'c(f,g):=f+g', 'i(x):=0',
+  '\\mathsf{Cat}(O,\\mathbb{Z},s,t,c,i)',
+], honestUnknown);
+check('a source that is not a one-argument definition is an honest unknown', [
+  ...POSET.slice(0, 2), 't(m):=\\operatorname{mod}(m,3)', 'c(f,g):=3+t(g)', 'i(x):=4x',
+  '\\mathsf{Cat}(O,M,zz,t,c,i)',
+], honestUnknown);
+
+console.log('== functors ==');
+
+/** C is the poset; D is Z/3 as a one-object category. */
+const FUNCTOR = [
+  ...POSET,
+  'C:=\\mathsf{Cat}(O,M,s,t,c,i)',
+  'P:=\\{0\\}',
+  'N:=\\{0,1,2\\}',
+  'u(n):=0',
+  'v(n):=0',
+  'd(m,n):=\\operatorname{mod}(m+n,3)',
+  'j(x):=0',
+  'D:=\\mathsf{Cat}(P,N,u,v,d,j)',
+];
+
+check('a named category is itself askable', [...FUNCTOR, 'C'], proved);
+check('the length functor to Z/3', [
+  ...FUNCTOR, 'F(m):=\\operatorname{mod}(t(m)-s(m),3)', 'G(x):=0', '\\mathsf{Fun}(C,D,F,G)',
+], proved);
+check('the identity functor', [
+  ...FUNCTOR, 'F(m):=m', 'G(x):=x', '\\mathsf{Fun}(C,C,F,G)',
+], proved);
+
+// One failure per law, since a checker that ran only one of the three would
+// pass both positives above.
+check('a map that breaks composition is not a functor', [
+  ...FUNCTOR, 'F(m):=\\operatorname{mod}((t(m)-s(m))^2,3)', 'G(x):=0', '\\mathsf{Fun}(C,D,F,G)',
+], exactFalse);
+check('a map that moves identities is not a functor', [
+  ...FUNCTOR, 'F(m):=\\operatorname{mod}(t(m)-s(m)+1,3)', 'G(x):=0', '\\mathsf{Fun}(C,D,F,G)',
+], exactFalse);
+check('an object map disagreeing with the morphism map is not a functor', [
+  ...FUNCTOR, 'F(m):=m', 'G(x):=\\operatorname{mod}(x+1,3)', '\\mathsf{Fun}(C,C,F,G)',
+], exactFalse);
+check('a morphism map leaving the target category is not a functor', [
+  ...FUNCTOR, 'F(m):=m+100', 'G(x):=x', '\\mathsf{Fun}(C,C,F,G)',
+], exactFalse);
+
+check('a functor between things that are not named categories is an honest unknown', [
+  ...FUNCTOR, 'F(m):=m', 'G(x):=x', '\\mathsf{Fun}(O,M,F,G)',
+], honestUnknown);
+
+console.log('== category rows carry a trace ==');
+check('a proved category row cites the exhaustion it ran', [
+  ...POSET, '\\mathsf{Cat}(O,M,s,t,c,i)',
+], (result) => {
+  if (result.proofStatus !== 'available') return 'expected a trace';
+  const step = result.proof.steps.at(-1);
+  if (step?.rule !== 'algebra.finite-exhaustion') return `cited ${step?.rule}`;
+  // The exhaustion runs over morphisms; reporting the three objects would
+  // describe a search that never happened.
+  return step.data?.carrier === 6 ? null : `carrier reported as ${step.data?.carrier}`;
+});
 
 if (failures.length) {
   console.error(`\n${failures.join('\n\n')}\n`);

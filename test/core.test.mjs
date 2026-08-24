@@ -15,6 +15,7 @@ import {
   EXPR_LAYOUT,
   INLINE_SHORTCUTS,
   KEYBOARD_LAYOUTS,
+  LINEAR_ALGEBRA_LAYOUT,
   REL_LAYOUT,
   SET_LAYOUT,
   TOPOLOGY_LAYOUT,
@@ -154,6 +155,16 @@ checkChainLayout(
   'x>3\\implies x>2\\implies x>1',
   '\\begin{align}x>3 & \\implies x>2\\\\  & \\implies x>1\\end{align}',
 );
+checkChainLayout(
+  'a single inequality conclusion does not chain through its assumptions',
+  '\\epsilon>0\\vdash d(\\epsilon)>0',
+  null,
+);
+checkChainLayout(
+  'a chained conclusion keeps its proof assumptions in scope',
+  'x>0\\vdash x+2>x+1>x',
+  '\\begin{align}x>0\\vdash x+2 & > x+1\\\\  & > x\\end{align}',
+);
 checkChainLayout('mixed equality and inequality stays inline', 'a=b<c', null);
 checkChainLayout('parenthesized implication is not top-level', 'A\\implies(B\\implies C)', null);
 checkChainLayout('mixed connectives retain precedence', 'A\\iff B\\implies C\\iff D', null);
@@ -192,6 +203,13 @@ else {
   failed++;
   failures.push(`inequality checkpoints: got ${JSON.stringify(inequalityCheckpoints)}`);
 }
+
+const sequentCheckpoints = getTopLevelChainCheckpoints('x>0\\vdash x+2>x+1>x')?.checkpoints;
+if (JSON.stringify(sequentCheckpoints) === JSON.stringify([
+  'x>0\\vdash x+2>x+1',
+  'x>0\\vdash x+2>x+1>x',
+])) passed++;
+else failures.push(`sequent conclusion checkpoints: got ${JSON.stringify(sequentCheckpoints)}`);
 
 const domainChain = getTopLevelChainCheckpoints(
   '\\forall t\\in\\mathbb{R},A=B=C'
@@ -305,20 +323,34 @@ const functionKeyLabels = EXPR_LAYOUT.rows[1]
 if (JSON.stringify(functionKeyLabels) === JSON.stringify(['sin', 'cos', 'tan', 'ln', 'log', '|x|'])) passed++;
 else failures.push(`expression function row is incomplete: ${functionKeyLabels.join(', ')}`);
 
-// The two leading tabs split calculating from claiming. `:=` belongs to both,
-// because a definition is written on either kind of line.
+// The two leading tabs split calculating from claiming. Definitions and serif
+// names have their own dedicated tab.
 const exprKeys = EXPR_LAYOUT.rows.flat().map((entry) => entry.latex ?? entry.label);
 const relKeys = REL_LAYOUT.rows.flat().map((entry) => entry.latex ?? entry.label);
 if (['=', '\\ne', '<', '>', '\\le', '\\ge', '\\neg', '\\land', '\\lor',
-  '\\implies', '\\impliedby', '\\iff', '\\coloneq']
+  '\\implies', '\\impliedby', '\\iff']
   .every((expected) => relKeys.includes(expected))) passed++;
 else failures.push('relation tab is missing a relation or connective');
-if (['0', '7', 'i', '\\pi', 'e', '\\coloneq', '(', ')', '\\sqrt{#?}']
+if (['0', '7', 'i', '\\pi', 'e', '(', ')', '\\sqrt{#?}']
   .every((expected) => exprKeys.includes(expected))) passed++;
 else failures.push('expression tab is missing a value key');
-// Deliberately absent from the expression tab.
-if (!exprKeys.includes(',') && !EXPR_LAYOUT.rows.flat().some((entry) => entry.command)) passed++;
-else failures.push('expression tab should carry no comma and no serif toggle');
+if (![EXPR_LAYOUT, REL_LAYOUT].some((layout) => (
+  layout.rows.flat().some((entry) => entry.latex === '\\coloneq')
+))) passed++;
+else failures.push('define should live only on the definition tab');
+if (!exprKeys.includes(',') && ![EXPR_LAYOUT, REL_LAYOUT].some((layout) => (
+  layout.rows.flat().some((entry) => entry.command?.[0] === 'switchMode')
+))) passed++;
+else failures.push('expression and relation tabs should carry no serif toggle');
+for (const layout of [EXPR_LAYOUT, REL_LAYOUT, SET_LAYOUT, LINEAR_ALGEBRA_LAYOUT]) {
+  const bottom = layout.rows.at(-1);
+  if (['(', ')'].every((latex) => bottom.some((entry) => entry.latex === latex))
+    && layout.rows.slice(0, -1).flat().every((entry) => !['(', ')'].includes(entry.latex))) {
+    passed++;
+  } else {
+    failures.push(`${layout.label} should keep both parentheses exclusively on its bottom row`);
+  }
+}
 
 // Naming is its own tab, laid out like a QWERTY keyboard across four layers:
 // case and alphabet are separate axes, each with its own shift.
@@ -414,13 +446,37 @@ else failures.push('relation tab should carry exactly one equals key');
 
 if (KEYBOARD_LAYOUTS[0] === EXPR_LAYOUT
   && KEYBOARD_LAYOUTS[1] === REL_LAYOUT
-  && KEYBOARD_LAYOUTS[2] === DEFN_LAYOUT
-  && KEYBOARD_LAYOUTS[3] === SET_LAYOUT
-  && KEYBOARD_LAYOUTS[4] === ANALYSIS_LAYOUT
-  && KEYBOARD_LAYOUTS[5] === TOPOLOGY_LAYOUT
-  && KEYBOARD_LAYOUTS[6] === ALGEBRA_LAYOUT
-  && JSON.stringify(KEYBOARD_LAYOUTS.slice(7)) === JSON.stringify(['alphabetic', 'greek'])) passed++;
-else failures.push('redundant numeric and symbols keyboard tabs should be removed');
+  && KEYBOARD_LAYOUTS[2] === SET_LAYOUT
+  && KEYBOARD_LAYOUTS[3] === ANALYSIS_LAYOUT
+  && KEYBOARD_LAYOUTS[4] === TOPOLOGY_LAYOUT
+  && KEYBOARD_LAYOUTS[5] === ALGEBRA_LAYOUT
+  && KEYBOARD_LAYOUTS[6] === LINEAR_ALGEBRA_LAYOUT
+  && KEYBOARD_LAYOUTS[7] === DEFN_LAYOUT
+  && KEYBOARD_LAYOUTS.length === 8) passed++;
+else failures.push('keyboard tabs should end with defn and omit the stock tabs');
+const rowCount = (layout) => layout.rows?.length
+  ?? (layout.layers.every((layer) => layer.rows.length === 5) ? 5 : null);
+if (KEYBOARD_LAYOUTS.every((layout) => rowCount(layout) === 5)) passed++;
+else failures.push(`every keyboard tab should have five rows: ${KEYBOARD_LAYOUTS
+  .map((layout) => `${layout.label}=${rowCount(layout)}`).join(', ')}`);
+if (ALGEBRA_LAYOUT.label === 'alg' && ALGEBRA_LAYOUT.tooltip === 'Algebra') passed++;
+else failures.push('the algebra keyboard tab should be labelled alg');
+const genericEditingLabels = new Set(['[left]', '[right]', '[backspace]', '[return]']);
+if ([ANALYSIS_LAYOUT, TOPOLOGY_LAYOUT, ALGEBRA_LAYOUT].every((layout) => (
+  [...genericEditingLabels].every((label) => (
+    layout.rows.at(-1).some((entry) => entry.label === label)
+  ))
+))) passed++;
+else failures.push('analysis, topology, and algebra bottom rows should retain the generic editing keys');
+const topicBottomKeys = [
+  [ANALYSIS_LAYOUT, new Set(['\\mathcal{O}_{\\mathbb{R}}', '\\mathcal{C}_{\\mathbb{R}}'])],
+  [TOPOLOGY_LAYOUT, new Set(['\\bigcup_{i\\in I}', '\\bigcap_{i\\in I}'])],
+  [ALGEBRA_LAYOUT, new Set(['mod'])],
+];
+if (topicBottomKeys.every(([layout, forbidden]) => layout.rows.at(-1).every((entry) => (
+  !forbidden.has(entry.latex) && !forbidden.has(entry.label)
+)))) passed++;
+else failures.push('analysis, topology, and algebra topic keys should stay out of the bottom row');
 const setKeys = SET_LAYOUT.rows.flat().map((entry) => entry.latex ?? entry.insert ?? entry.label);
 if (['\\in', '\\notin', '\\subseteq', '\\cup', '\\cap', '\\setminus', '\\varnothing', '\\times',
   '\\mathcal{P}\\left(#?\\right)', '\\mathbb{R}']
@@ -435,15 +491,20 @@ if (INLINE_SHORTCUTS.cart === '\\operatorname{CartesianProduct}\\left(#?,#?\\rig
 else failures.push('the cart inline shortcut should insert an unambiguous Cartesian product');
 if (setKeys.filter((entry) => entry === '\\varnothing' || entry === '\\emptyset').length === 1) passed++;
 else failures.push('set keyboard should expose exactly one empty-set key');
-const standardSetKeys = SET_LAYOUT.rows[2];
-if (standardSetKeys.length === 5
+const standardSetKeys = SET_LAYOUT.rows[3].filter((entry) => entry.latex !== ',');
+// `\mathbb{P}` is on this row for a different reason from the other five:
+// Compute Engine has no primes, so the row is the only way to type the one
+// domain this application decides for itself.
+if (['\\mathbb{N}', '\\mathbb{Z}', '\\mathbb{Q}', '\\mathbb{R}', '\\mathbb{C}', '\\mathbb{P}']
+  .every((latex) => standardSetKeys.some((entry) => entry.latex === latex))
+  && standardSetKeys.length === 6
   && standardSetKeys.every((entry) => !entry.class?.split(/\s+/).includes('small'))) passed++;
 else failures.push('standard number-set keys should use the full keycap scale');
 const analysisKeys = ANALYSIS_LAYOUT.rows.flat();
-if (['\\epsilon', '\\delta'].every((latex) => analysisKeys.some((entry) => entry.latex === latex))
-  && ['ball', 'cball', 'cont', 'limit']
+if (!['\\epsilon', '\\delta'].some((latex) => analysisKeys.some((entry) => entry.latex === latex))
+  && ['ball', 'cball', 'cont', 'limit', '∂ at']
     .every((label) => analysisKeys.some((entry) => entry.label === label))) passed++;
-else failures.push('analysis keyboard should expose witnesses and metric balls');
+else failures.push('analysis keyboard should expose analysis tools without standalone epsilon/delta keys');
 const topologyKeys = TOPOLOGY_LAYOUT.rows.flat();
 if (['\\mathsf{Disc}', '\\mathsf{Ind}', '\\mathsf{Cof}', '\\mathsf{Met}',
   '\\mathsf{Sub}', '\\mathsf{Prod}', '\\mathsf{Ax}_{\\varnothing}',
@@ -511,6 +572,26 @@ check('two-arg function', ['g(x,y)=x+y', 'g(3,4)'], isValue('7'));
 check('text-mode function', ['\\text{sq}(x)=x^2', '\\text{sq}(9)'], isValue('81'));
 check('function of constant', ['c=3', 'f(x)=x+c', 'f(4)'], isValue('7'));
 check('nested functions', ['f(x)=x^2', 'g(x)=f(x)+1', 'g(3)'], isValue('10'));
+check('a predicate definition is identified as proposition-valued', ['L(x):=x^2\\ge0'],
+  (result) => result.kind === 'definition' && result.what === 'function'
+    && result.proposition === true ? null : 'expected a proposition-valued definition');
+check('a named lemma is expanded inside a sequent and proved exactly', [
+  'L(x):=x>1',
+  'L(x)\\vdash x>0',
+], isProved);
+check('nested named lemmas expand transitively', [
+  'L(x):=x>1',
+  'M(x):=L(x)\\land x<4',
+  'M(x)\\vdash x>0',
+], isProved);
+check('a proposition constant is reusable as an exact premise', [
+  'T:=x^2\\ge0',
+  'T\\vdash x^2+1>0',
+], isProved);
+check('defining a false lemma does not certify it', [
+  'L(x):=x^2<0',
+  'L(x)',
+], isFalse);
 check('redefining is an equation', ['x=5', 'x=5'], isTrue);
 check('redefining false', ['x=5', 'x=6'], isFalse);
 check('self-reference is not a definition', ['x=x+1'], isFalse);
@@ -799,13 +880,102 @@ check('open summation is not disproved',
 check('closed-form summation still proved',
   ['\\sum_{k=1}^{n}k=\\frac{n(n+1)}{2}'], isProved);
 
-console.log('== calculus notation is refused, never disproved ==');
+console.log('== differentiation, and the notation still refused ==');
 /**
- * `\frac{d}{dx}` parses as the ordinary fraction `d / (d·x)`, which used to
- * leave `d` as a free variable and let the sampling pass disprove the power
- * rule with a witness naming a variable nobody typed. Being wrong about
- * whether we can answer is survivable; being confidently wrong about the
- * answer is not — so the only thing these assert is "not a verdict".
+ * `\frac{d}{dx}` is an operator, but `sanitize` used to intern the `d` as a
+ * user name, leaving the ordinary fraction `d / (d·x)` — which let the
+ * sampling pass disprove the power rule with a witness naming a variable
+ * nobody typed. The operator is now rewritten with `d` kept literal and only
+ * the differentiation variable renamed.
+ */
+for (const [label, line] of [
+  ['power rule, Leibniz', '\\frac{d}{dx}x^2=2x'],
+  ['second derivative', '\\frac{d^2}{dx^2}x^3=6x'],
+  ['second derivative, braced', '\\frac{d^{2}}{dx^{2}}x^3=6x'],
+  ['upright d', '\\frac{\\mathrm{d}}{\\mathrm{d}x}x^2=2x'],
+  ['partial derivative', '\\frac{\\partial}{\\partial x}(xy)=y'],
+  ['partial derivative at a point', '\\operatorname{partial}(x,x^2y,3)=6y'],
+  ['chain rule', '\\frac{d}{dx}\\sin(x^2)=2x\\cos(x^2)'],
+  ['product rule', '\\frac{d}{dx}(x\\sin(x))=\\sin(x)+x\\cos(x)'],
+  ['a variable other than x', '\\frac{d}{dt}t^2=2t'],
+  ['a greek variable', '\\frac{d}{d\\theta}\\sin(\\theta)=\\cos(\\theta)'],
+  ['differentiating a definition', 'f(x):=x^3'],
+]) check(label, line.includes(':=') ? [line, '\\frac{d}{dx}f(x)=3x^2'] : [line], isProved);
+
+check('a bare derivative is carried out', ['\\frac{d}{dx}x^2'], isSymbolic);
+
+// What the analysis-tab keys insert, with their placeholders filled in as a
+// reader would fill them. A key that produces notation the engine refuses is
+// worse than no key.
+for (const entry of ANALYSIS_LAYOUT.rows.flat()
+  .filter((key) => /^(?:second |partial )?derivative(?: at a point)?$/.test(key.tooltip ?? ''))) {
+  const template = entry.insert ?? entry.latex;
+  let variable = 0;
+  const values = entry.tooltip === 'partial derivative at a point'
+    ? ['x', 'x^2y', '3']
+    : ['x', 'x^2'];
+  const line = template.replace(/#\?/g, () => values[variable++]);
+  check(`the ${entry.tooltip} key inserts usable notation`, [line], (r) => (
+    r.kind === 'error' ? `refused its own key: ${r.message}` : null
+  ));
+}
+
+if (INLINE_SHORTCUTS.partial === '\\operatorname{partial}\\left(#?,#?,#?\\right)') passed++;
+else failures.push('the partial shortcut should ask for a variable, expression, and point');
+check('partial-at leaves other variables symbolic', [
+  '\\operatorname{partial}(x,x^2y,3)',
+], (r) => (
+  r.kind === 'symbolic' && r.latex === '6y'
+    && JSON.stringify(r.undefinedNames) === JSON.stringify(['y'])
+    ? null : `expected 6y with only y free, got ${JSON.stringify(r)}`
+));
+check('partial-at requires a variable first', [
+  '\\operatorname{partial}(x+1,x^2,3)',
+], (r) => (
+  r.kind === 'error' && /first partial input/.test(r.message)
+    ? null : `expected a variable-input error, got ${JSON.stringify(r)}`
+));
+check('partial-at differentiates a defined function before substituting', [
+  'f(x):=x^3',
+  '\\operatorname{partial}(x,f(x),2)=12',
+], isProved);
+check('partial-at refuses an undefined function', [
+  '\\operatorname{partial}(x,f(x),2)',
+], (r) => (
+  r.kind === 'error' && /define f before differentiating it/.test(r.message)
+    ? null : `expected an undefined-function error, got ${JSON.stringify(r)}`
+));
+
+const limitKey = ANALYSIS_LAYOUT.rows.flat()
+  .find((key) => /limit as the variable/.test(key.tooltip ?? ''));
+check('the limit key inserts usable notation', [
+  // variable, target, body
+  (limitKey?.insert ?? limitKey?.latex ?? '')
+    .replace(/#\?/g, ((values) => () => values.shift())(['x', '0', '\\frac{\\sin(x)}{x}']))
+    + '=1',
+], isProved);
+
+// The bare arrow was only ever meaningful inside a limit subscript, and on its
+// own said nothing — `x \to 0` has no verdict. The template carries it now.
+if (!ANALYSIS_LAYOUT.rows.flat().some((key) => key.latex === '\\to')) passed++;
+else failures.push('the bare arrow key is back without a limit around it');
+
+const integralKey = ANALYSIS_LAYOUT.rows.flat()
+  .find((key) => key.tooltip === 'definite integral');
+check('the definite integral key inserts usable notation', [
+  // lower, upper, integrand, variable — in the order the template asks.
+  (integralKey?.insert ?? integralKey?.latex ?? '')
+    .replace(/#\?/g, ((values) => () => values.shift())(['0', '1', 'x^2', 'x'])),
+], (r) => (r.kind === 'error' ? `refused its own key: ${r.message}` : null));
+check('a wrong derivative is not proved', ['\\frac{d}{dx}x^2=3x'], (r) => (
+  r.kind === 'truth' && r.value === false ? null : 'expected false'
+));
+
+/**
+ * Being wrong about whether we can answer is survivable; being confidently
+ * wrong about the answer is not. These forms have no procedure here, and
+ * Compute Engine is actively wrong about some of them — `dy/dx` evaluates to
+ * 0, and `\int_{-1}^{1}dx/x^2` comes back negative — so they stay refused.
  */
 const isRefused = (r) => {
   if (r.kind === 'truth') return `refused notation produced a ${r.value} verdict`;
@@ -813,18 +983,62 @@ const isRefused = (r) => {
 };
 
 for (const [label, line] of [
-  ['power rule, Leibniz', '\\frac{d}{dx}x^2=2x'],
-  ['bare derivative', '\\frac{d}{dx}x^2'],
-  ['second derivative', '\\frac{d^2}{dx^2}x^3=6x'],
-  ['second derivative, braced', '\\frac{d^{2}}{dx^{2}}x^3=6x'],
   ['Leibniz quotient', '\\frac{dy}{dx}=2x'],
-  ['upright d', '\\frac{\\mathrm{d}}{\\mathrm{d}x}x^2=2x'],
-  ['partial derivative', '\\frac{\\partial}{\\partial x}(xy)=y'],
-  ['definite integral', '\\int_{0}^{1}x^2dx=\\frac{1}{3}'],
+  ['Leibniz quotient, zero', '\\frac{dy}{dx}=0'],
+  ['mixed partial', '\\frac{\\partial^2 u}{\\partial x\\partial y}=0'],
+  ['a lone partial', '\\partial f=0'],
   ['indefinite integral', '\\int x^2dx=\\frac{x^3}{3}'],
   ['double integral', '\\iint_{D}x\\,dx\\,dy=1'],
   ['contour integral', '\\oint_{C}z\\,dz=0'],
 ]) check(label, [line], isRefused);
+
+console.log('== definite integrals, behind the continuity gate ==');
+/**
+ * Compute Engine answers an integral whether or not the answer exists, and is
+ * wrong about some divergent ones — `\int_{-1}^{1}dx/x^2` comes back equal to
+ * a negative number, for an integrand that is positive everywhere. So its
+ * value is used only where the sheet has established the integral is proper.
+ */
+for (const [label, line] of [
+  ['a polynomial', '\\int_{0}^{1}x^2\\,dx=\\frac{1}{3}'],
+  ['a linear integrand', '\\int_{0}^{2}x\\,dx=2'],
+  ['a constant', '\\int_{0}^{3}2\\,dx=6'],
+  ['sine over a period', '\\int_{0}^{\\pi}\\sin(x)\\,dx=2'],
+  ['an absolute value', '\\int_{-1}^{1}\\left|x\\right|\\,dx=1'],
+  ['a pole outside the interval', '\\int_{1}^{2}\\frac{1}{x}\\,dx=\\ln(2)'],
+  ['a denominator with no real root', '\\int_{0}^{1}\\frac{1}{x^2+1}\\,dx=\\frac{\\pi}{4}'],
+  ['an exponential', '\\int_{0}^{1}e^{x}\\,dx=e-1'],
+  // A bound need not be a literal — it needs to be a point on the line.
+  ['sine over a full period', '\\int_{0}^{2\\pi}\\sin(x)\\,dx=0'],
+  ['a fractional multiple of pi', '\\int_{0}^{\\frac{\\pi}{2}}\\cos(x)\\,dx=1'],
+]) check(label, [line], isProved);
+
+check('a wrong integral is disproved', ['\\int_{0}^{1}x^2\\,dx=\\frac{1}{4}'], (r) => (
+  r.kind === 'truth' && r.value === false ? null : 'expected false'
+));
+
+// The gate exists for these. Each is either divergent or beyond what the
+// sheet can check, and Compute Engine answers the first two *wrongly*.
+for (const [label, line] of [
+  ['1/x straddling the pole', '\\int_{-1}^{1}\\frac{1}{x}\\,dx=0'],
+  ['1/x^2 straddling the pole', '\\int_{-1}^{1}\\frac{1}{x^2}\\,dx=-2'],
+  ['a pole at the lower limit', '\\int_{0}^{1}\\frac{1}{x}\\,dx=1'],
+  ['a pole at the upper limit', '\\int_{1}^{2}\\frac{1}{x-2}\\,dx=0'],
+  ['an infinite limit', '\\int_{1}^{\\infty}\\frac{1}{x}\\,dx=1'],
+  ['a convergent infinite limit', '\\int_{0}^{\\infty}e^{-x}\\,dx=1'],
+  ['a logarithm', '\\int_{1}^{2}\\ln(x)\\,dx=0'],
+  ['a tangent through its pole', '\\int_{0}^{2}\\tan(x)\\,dx=0'],
+  ['a square root', '\\int_{0}^{1}\\sqrt{x}\\,dx=\\frac{2}{3}'],
+  ['a symbolic limit', '\\int_{0}^{a}x\\,dx=0'],
+  ['an undefined name as a limit', '\\int_{0}^{zz}x\\,dx=0'],
+  // Irrational bounds put the pole test out of exact reach, so a rational
+  // integrand between them is withheld even when it would have been fine.
+  ['a pole test it cannot run exactly', '\\int_{-\\pi}^{\\pi}\\frac{1}{x}\\,dx=0'],
+]) check(label, [line], isRefused);
+
+// `f(x)` for an undefined `f` is read as `f · x`, whose derivative is `f` —
+// so the line would be answered, wrongly. Say what is missing instead.
+check('differentiating an undefined function', ['\\frac{d}{dx}f(x)=0'], isRefused);
 
 // The guard must not reach past calculus notation into ordinary division, and
 // `d` remains an ordinary name — the demo sheet defines `d(\epsilon)`.

@@ -26,12 +26,24 @@ export const INLINE_SHORTCUTS = {
   unity: '\\mathsf{Uni}\\left(#?,#?,#?\\right)',
   field: '\\mathsf{Fld}\\left(#?,#?,#?,#?,#?\\right)',
   module: '\\mathsf{Mdl}\\left(#?,#?,#?,#?,#?,#?,#?\\right)',
+  vectorspace: '\\mathsf{Vec}\\left(#?,#?,#?,#?,#?,#?,#?,#?,#?\\right)',
+  category: '\\mathsf{Cat}\\left(#?,#?,#?,#?,#?,#?\\right)',
+  functor: '\\mathsf{Fun}\\left(#?,#?,#?,#?\\right)',
   grpeq: '\\mathsf{Grp}\\vdash #?=#?',
   ableq: '\\mathsf{Abl}\\vdash #?=#?',
   assoc: '\\mathsf{Asc}\\left(#?,#?\\right)',
   identity: '\\mathsf{Idn}\\left(#?,#?,#?\\right)',
   inverses: '\\mathsf{Inv}\\left(#?,#?,#?\\right)',
   card: '\\operatorname{card}\\left(#?\\right)',
+  // Typed entry for the two starting shapes. Other sizes are reached by
+  // resizing the blank grid, so there is no `mat3` or `vec3` to remember.
+  mat: '\\begin{pmatrix}#? & #? \\\\ #? & #?\\end{pmatrix}',
+  vec: '\\begin{pmatrix}#? \\\\ #?\\end{pmatrix}',
+  norm: '\\left\\|#?\\right\\|',
+  deriv: '\\frac{d}{d#?}#?',
+  partial: '\\operatorname{partial}\\left(#?,#?,#?\\right)',
+  integral: '\\int_{#?}^{#?}#?\\,d#?',
+  lim: '\\lim_{#?\\to#?}#?',
   induct: '\\mathsf{Induct}\\left(#?,#?\\right)',
   indbase: '\\mathsf{Base}\\left(#?,#?\\right)',
   indstep: '\\mathsf{Step}\\left(#?,#?\\right)',
@@ -126,7 +138,7 @@ const fn = (label, insert, tooltip) => ({ label, insert, tooltip, class: 'small'
  * A leading layer with the operators this app cares about, so none of them
  * require LaTeX knowledge. The stock layers stay available behind it.
  */
-/** Bare on the keycap, spaced when inserted. Shared by the two leading tabs. */
+/** Bare on the keycap, spaced when inserted. */
 const defineKey = {
   latex: '\\coloneq', insert: '\\mathrel{\\coloneq}', tooltip: 'define (:=)',
 };
@@ -178,15 +190,15 @@ export const EXPR_LAYOUT = {
       key('1'), key('2'), key('3'), key('-'),
     ],
     [
-      // Widened rather than padded with a separator: MathLive only defines
-      // w0/w3/w5/w15/w20/w40/w50, so a `w30` filler would silently collapse
-      // and take the digit columns out of alignment with it.
-      { ...defineKey, width: 2 },
-      key('(', { width: 2 }), key(')', { width: 2 }),
+      // Keep the number pad aligned after moving punctuation to the editing
+      // row. MathLive ignores numeric widths on separators, so its supported
+      // five-unit class plus one ordinary unit make the required six.
+      { class: 'separator w50' }, { class: 'separator' },
       { class: 'separator w15' },
       key('0', { width: 2 }), key('.'), key('+'),
     ],
     [
+      key('('), key(')'),
       { label: '[left]', tooltip: 'move left' },
       { label: '[right]', tooltip: 'move right' },
       { label: '[backspace]', tooltip: 'backspace', class: 'action hide-shift calc-backspace' },
@@ -351,24 +363,23 @@ export const REL_LAYOUT = {
   tooltip: 'Relations and logic',
   rows: [
     [
-      key('='), key('\\ne'), key('<'), key('>'), key('\\le'), key('\\ge'),
+      key('='), key('\\ne'), key('<'),
+    ],
+    [
+      key('>'), key('\\le'), key('\\ge'),
     ],
     [
       { latex: '\\neg', tooltip: 'logical not' },
       { latex: '\\land', tooltip: 'logical and' },
       { latex: '\\lor', tooltip: 'logical or' },
+    ],
+    [
       { latex: '\\implies', tooltip: 'implies' },
       { latex: '\\impliedby', tooltip: 'is implied by' },
       { latex: '\\iff', tooltip: 'is equivalent to' },
     ],
     [
-      defineKey,
       key('('), key(')'),
-      {
-        label: '<span style="font-family:Georgia,serif;font-size:0.9em">abc</span>',
-        command: ['switchMode', 'text'],
-        tooltip: 'serif text (Ctrl+T)',
-      },
       { label: '[left]', tooltip: 'move left' },
       { label: '[right]', tooltip: 'move right' },
       { label: '[backspace]', tooltip: 'backspace', class: 'action hide-shift calc-backspace' },
@@ -389,9 +400,17 @@ export const SET_LAYOUT = {
     [
       key('\\cup'), key('\\cap'), key('\\setminus'), key('\\varnothing'),
       key('\\times', { insert: '#?\\times#?', tooltip: 'Cartesian product' }),
+    ],
+    [
       key('\\mathcal{P}\\left(#?\\right)', { class: 'small', tooltip: 'power set' }),
       key('\\left\\{#?\\right\\}', { class: 'small', tooltip: 'finite set' }),
       key('\\left\\{#?\\mid #?\\right\\}', { class: 'small', tooltip: 'set builder' }),
+      // Bars, not a word: `|A|` is how a reader writes the size of a set, and
+      // the engine decides which reading applies from what sits between them.
+      key('\\left|#?\\right|', {
+        class: 'small',
+        tooltip: 'how many members (absolute value off a set)',
+      }),
     ],
     [
       key('\\mathbb{N}'),
@@ -399,9 +418,13 @@ export const SET_LAYOUT = {
       key('\\mathbb{Q}'),
       key('\\mathbb{R}'),
       key('\\mathbb{C}'),
+      // Not one of Compute Engine's sets, and not a notation every reader
+      // knows, so it earns a tooltip where the other four do not.
+      key('\\mathbb{P}', { tooltip: 'the primes' }),
+      key(','),
     ],
     [
-      key('('), key(')'), key(','),
+      key('('), key(')'),
       { label: '[left]', tooltip: 'move left' },
       { label: '[right]', tooltip: 'move right' },
       { label: '[backspace]', tooltip: 'backspace', class: 'action hide-shift calc-backspace' },
@@ -416,7 +439,12 @@ export const ANALYSIS_LAYOUT = {
   tooltip: 'Analysis, induction, and topology',
   rows: [
     [
-      key('\\epsilon'), key('\\delta'), key('\\forall'), key('\\exists'), key('\\to'),
+      key('\\forall'), key('\\exists'),
+      // The arrow used to sit here on its own, which told nobody that a limit
+      // subscript is the only place it means anything.
+      key('\\lim_{#?\\to#?}#?', {
+        class: 'small', tooltip: 'limit as the variable approaches a value',
+      }),
       key('\\left|#?\\right|', { class: 'small', tooltip: 'absolute value' }),
     ],
     [
@@ -424,6 +452,18 @@ export const ANALYSIS_LAYOUT = {
       fn('cball', '\\operatorname{closedball}(#?,#?)', 'closed ball'),
       fn('cont', '\\operatorname{cont}(#?,#?,#?,#?)', 'continuity witness'),
       fn('limit', '\\operatorname{limitw}(#?,#?,#?,#?,#?)', 'limit witness'),
+    ],
+    // The differentiation variable is a placeholder of its own: `d` has to
+    // stay literal for the operator to be read as one, and only the variable
+    // beside it is a name.
+    [
+      key('\\frac{d}{d#?}#?', { class: 'small', tooltip: 'derivative' }),
+      key('\\frac{d^{2}}{d#?^{2}}#?', { class: 'small', tooltip: 'second derivative' }),
+      fn('∂ at', '\\operatorname{partial}(#?,#?,#?)', 'partial derivative at a point'),
+      key("#@'", { latex: "f'", class: 'small', tooltip: 'derivative of a named function' }),
+      // Definite only: an indefinite integral is defined up to a constant,
+      // and the bounds are what the continuity gate needs to check.
+      key('\\int_{#?}^{#?}#?\\,d#?', { class: 'small', tooltip: 'definite integral' }),
     ],
     [
       key('\\mathsf{Induct}', {
@@ -435,14 +475,14 @@ export const ANALYSIS_LAYOUT = {
       key('\\mathsf{Step}', {
         insert: '\\mathsf{Step}(#?,#?)', class: 'small', tooltip: 'inductive step only',
       }),
-    ],
-    [
       key('\\mathcal{O}_{\\mathbb{R}}', {
         insert: '\\mathcal{O}_{\\mathbb{R}}(#?)', tooltip: 'open in the real metric',
       }),
       key('\\mathcal{C}_{\\mathbb{R}}', {
         insert: '\\mathcal{C}_{\\mathbb{R}}(#?)', tooltip: 'closed in the real metric',
       }),
+    ],
+    [
       key('('), key(')'), key(','),
       { label: '[left]', tooltip: 'move left' },
       { label: '[right]', tooltip: 'move right' },
@@ -506,7 +546,124 @@ export const TOPOLOGY_LAYOUT = {
         insert: '\\mathop{\\bigcap}(#?,#?)',
         tooltip: 'indexed intersection: family, index set', class: 'small',
       }),
+    ],
+    [
       key('('), key(')'), key(','),
+      { label: '[left]', tooltip: 'move left' },
+      { label: '[right]', tooltip: 'move right' },
+      { label: '[backspace]', tooltip: 'backspace', class: 'action hide-shift calc-backspace' },
+      { label: '[return]', tooltip: 'new line' },
+    ],
+  ],
+};
+
+/**
+ * A matrix template. `#?` becomes a placeholder cell, so the whole grid
+ * arrives at once and the reader tabs between entries instead of writing
+ * `\begin{pmatrix}` by hand.
+ */
+const matrixTemplate = (rows, columns) => {
+  const row = Array.from({ length: columns }, () => '#?').join(' & ');
+  return `\\begin{pmatrix}${Array.from({ length: rows }, () => row).join(' \\\\ ')}\\end{pmatrix}`;
+};
+
+/**
+ * A keycap that runs a MathLive editing command rather than inserting LaTeX.
+ * `matrix-resize` is the hook the sheet greys out once a grid has entries.
+ */
+const editKey = (label, command, tooltip) => ({
+  label, command: [command], tooltip, class: 'small matrix-resize',
+});
+
+/**
+ * May the row and column keys act on what is currently written?
+ *
+ * Resizing changes the shape of a grid, which is harmless while it is still a
+ * blank template and destructive once entries have been typed into it — a
+ * removed column takes real values with it. So it is offered only while every
+ * cell of every grid on the line is still empty.
+ */
+const MATRIX_ENVIRONMENT = /\\begin\{([a-zA-Z]*matrix)\}([\s\S]*?)\\end\{\1\}/g;
+
+/**
+ * Give every empty cell of a grid a placeholder to type into.
+ *
+ * MathLive's `addRowAfter` fills the new row with `\placeholder{}`, but
+ * `addColumnAfter` leaves the new cells genuinely empty — `1 &  & 2` — and an
+ * empty cell draws no box, so the column the reader just asked for is
+ * invisible and cannot be tabbed to. Normalising afterwards is what makes the
+ * two commands behave alike.
+ */
+export function fillEmptyMatrixCells(latex) {
+  if (typeof latex !== 'string') return latex;
+  return latex.replace(MATRIX_ENVIRONMENT, (whole, environment, body) => {
+    const rows = body.split(/\\\\/).map((row) => row
+      .split('&')
+      .map((cell) => (cell.trim() === '' ? '\\placeholder{}' : cell))
+      .join('&'));
+    return `\\begin{${environment}}${rows.join('\\\\')}\\end{${environment}}`;
+  });
+}
+
+export function matrixResizeAllowed(latex) {
+  if (typeof latex !== 'string') return false;
+  const environments = [
+    ...latex.matchAll(/\\begin\{([a-zA-Z]*matrix)\}([\s\S]*?)\\end\{\1\}/g),
+  ];
+  if (environments.length === 0) return false;
+  const isBlank = (cell) => cell
+    .replace(/\\placeholder(\[[^\]]*\])?\{[^{}]*\}/g, '')
+    .replace(/\\placeholder(\[[^\]]*\])?/g, '')
+    .trim() === '';
+  return environments.every(([, , body]) => body
+    .split(/\\\\/)
+    .every((row) => row.split('&').every(isBlank)));
+}
+
+/**
+ * Matrices and vectors.
+ *
+ * Entry is the point of this tab. A matrix is the one construction here that
+ * is genuinely painful to type — `\begin{pmatrix}1&2\\3&4\end{pmatrix}` is a
+ * lot of punctuation to get right — so the templates come first, and the row
+ * and column keys mean a grid that starts 2x2 does not have to stay 2x2.
+ */
+export const LINEAR_ALGEBRA_LAYOUT = {
+  label: 'mat',
+  tooltip: 'Matrices and vectors',
+  rows: [
+    // Two shapes to start from. Everything else is reached by resizing the
+    // blank template, which is why the row and column keys sit beside them.
+    [
+      key(matrixTemplate(2, 1), { class: 'small', tooltip: 'column vector, 2 entries' }),
+      key(matrixTemplate(2, 2), { class: 'small', tooltip: '2x2 matrix' }),
+    ],
+    [
+      editKey('row +', 'addRowAfter', 'add a row (empty grids only)'),
+      editKey('row -', 'removeRow', 'remove a row (empty grids only)'),
+      editKey('col +', 'addColumnAfter', 'add a column (empty grids only)'),
+      editKey('col -', 'removeColumn', 'remove a column (empty grids only)'),
+    ],
+    [
+      key('#@^{T}', { latex: 'M^{T}', class: 'small', tooltip: 'transpose' }),
+      key('#@^{-1}', { latex: 'M^{-1}', class: 'small', tooltip: 'inverse' }),
+      fn('det', '\\det(#?)', 'determinant'),
+      key('\\left\\|#?\\right\\|', { class: 'small', tooltip: 'norm (length) of a vector' }),
+      key('#@_{#?,#?}', {
+        latex: 'M_{i,j}', insert: '_{#?,#?}', class: 'small',
+        tooltip: 'matrix entry (row, column)',
+      }),
+    ],
+    [
+      key('\\cdot', { tooltip: 'dot product between vectors, otherwise multiply' }),
+      key('\\times', {
+        insert: '#?\\times#?',
+        tooltip: 'cross product between 3-vectors, otherwise multiply',
+      }),
+      key(','),
+    ],
+    [
+      key('('), key(')'),
       { label: '[left]', tooltip: 'move left' },
       { label: '[right]', tooltip: 'move right' },
       { label: '[backspace]', tooltip: 'backspace', class: 'action hide-shift calc-backspace' },
@@ -517,8 +674,8 @@ export const TOPOLOGY_LAYOUT = {
 
 /** Finite algebraic structures: the group axioms, each separately checkable. */
 export const ALGEBRA_LAYOUT = {
-  label: 'grp',
-  tooltip: 'Groups',
+  label: 'alg',
+  tooltip: 'Algebra',
   rows: [
     [
       key('\\mathsf{Grp}', {
@@ -529,6 +686,16 @@ export const ALGEBRA_LAYOUT = {
       }),
       key('\\mathsf{Sbg}', {
         insert: '\\mathsf{Sbg}(#?,#?,#?,#?)', class: 'small', tooltip: 'is a subgroup',
+      }),
+      key('\\mathsf{Cat}', {
+        insert: '\\mathsf{Cat}(#?,#?,#?,#?,#?,#?)',
+        class: 'small',
+        tooltip: 'is a category: objects, morphisms, source, target, composition, identities',
+      }),
+      key('\\mathsf{Fun}', {
+        insert: '\\mathsf{Fun}(#?,#?,#?,#?)',
+        class: 'small',
+        tooltip: 'is a functor: two named categories, then the morphism and object maps',
       }),
     ],
     [
@@ -549,6 +716,11 @@ export const ALGEBRA_LAYOUT = {
         class: 'small',
         tooltip: 'is a module over a ring',
       }),
+      key('\\mathsf{Vec}', {
+        insert: '\\mathsf{Vec}(#?,#?,#?,#?,#?,#?,#?,#?,#?)',
+        class: 'small',
+        tooltip: 'is a vector space: vectors, +, 0, scalars, +, ·, 0, 1, action',
+      }),
     ],
     [
       key('\\mathsf{Clo}', {
@@ -562,6 +734,18 @@ export const ALGEBRA_LAYOUT = {
       }),
       key('\\mathsf{Inv}', {
         insert: '\\mathsf{Inv}(#?,#?,#?)', class: 'small', tooltip: 'inverses axiom',
+      }),
+      // The category axioms sit with the group axioms rather than in a row of
+      // their own: the tab is five rows everywhere and the grouping is by what
+      // a key *is*, not by which structure it came from.
+      key('\\mathsf{Cmp}', {
+        insert: '\\mathsf{Cmp}(#?,#?,#?,#?,#?)', class: 'small', tooltip: 'composition is well-typed',
+      }),
+      key('\\mathsf{Idt}', {
+        insert: '\\mathsf{Idt}(#?,#?,#?,#?,#?,#?)', class: 'small', tooltip: 'identity and unit laws',
+      }),
+      key('\\mathsf{Aso}', {
+        insert: '\\mathsf{Aso}(#?,#?,#?,#?)', class: 'small', tooltip: 'composition is associative',
       }),
     ],
     [
@@ -577,10 +761,9 @@ export const ALGEBRA_LAYOUT = {
       }),
       key('^{-1}', { insert: '#@^{-1}', tooltip: 'inverse' }),
       key('1', { tooltip: 'identity' }),
+      fn('mod', '\\operatorname{mod}(#?,#?)', 'modulo'),
     ],
     [
-      fn('card', '\\operatorname{card}(#?)', 'size of a finite set'),
-      fn('mod', '\\operatorname{mod}(#?,#?)', 'modulo'),
       key('('), key(')'), key(','),
       { label: '[left]', tooltip: 'move left' },
       { label: '[right]', tooltip: 'move right' },
@@ -592,9 +775,9 @@ export const ALGEBRA_LAYOUT = {
 
 /** The custom layers subsume MathLive's stock numeric and symbol tabs. */
 export const KEYBOARD_LAYOUTS = [
-  EXPR_LAYOUT, REL_LAYOUT, DEFN_LAYOUT,
+  EXPR_LAYOUT, REL_LAYOUT,
   SET_LAYOUT, ANALYSIS_LAYOUT, TOPOLOGY_LAYOUT, ALGEBRA_LAYOUT,
-  'alphabetic', 'greek',
+  LINEAR_ALGEBRA_LAYOUT, DEFN_LAYOUT,
 ];
 
 /**

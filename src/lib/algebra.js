@@ -25,7 +25,9 @@ export const ALGEBRA_PREDICATES = new Set([
   'GroupStructure', 'GroupClosure', 'GroupAssociative',
   'GroupIdentity', 'GroupInverses', 'AbelianGroup', 'Subgroup',
   'RingStructure', 'RingDistributive', 'RingUnity', 'FieldStructure',
-  'ModuleStructure',
+  'ModuleStructure', 'VectorSpace',
+  'CategoryStructure', 'CategoryComposition', 'CategoryIdentities',
+  'CategoryAssociative', 'FunctorStructure',
 ]);
 
 /**
@@ -299,6 +301,334 @@ function moduleTruth(ce, expr, definitions) {
   return true;
 }
 
+/* ------------------------------- categories ------------------------------- */
+
+/**
+ * Small categories, on the same bargain as the rest of this file.
+ *
+ * A category differs from every structure above it in one way that shapes all
+ * of the code below: **composition is partial**. `c(f, g)` is a question only
+ * when `f` and `g` meet, and an axiom quantified over "all pairs" would be
+ * asking about pairs that do not compose. So the tables here carry three
+ * outcomes rather than two — not composable, composable and inside, composable
+ * and outside — and every axiom says which of the three it tolerates.
+ *
+ *     O := {0, 1, 2}
+ *     M := {0, 1, 2, 4, 5, 8}          the poset 0 <= 1 <= 2, with i -> j as 3i + j
+ *     s(m) := floor(m/3)
+ *     t(m) := mod(m, 3)
+ *     c(f, g) := 3s(f) + t(g)
+ *     i(x) := 4x
+ *     Cat(O, M, s, t, c, i)
+ *
+ * **`c(f, g)` is `f` then `g`** — diagrammatic order, so the composable
+ * condition reads `t(f) = s(g)` with the arguments in the order they are
+ * written. This is the opposite of the `g . f` convention, and it is the one
+ * choice here a reader has to be told rather than shown.
+ *
+ * What this is not: a theory of categories. Yoneda quantifies over all small
+ * categories and is not something a carrier-by-carrier check can reach. What
+ * it can do is witness a property on a concrete one.
+ */
+
+/** The four that share the `(O, M, s, t, c, ...)` shape; `Fun` does not. */
+const CATEGORY_PREDICATES = new Set([
+  'CategoryStructure', 'CategoryComposition', 'CategoryIdentities', 'CategoryAssociative',
+]);
+
+function unaryDefinition(expr, definitions) {
+  const definition = definitions.get(expr?.symbol);
+  return definition?.kind === 'function' && definition.arity === 1
+    && definition.bodyExpr && definition.paramIds?.length === 1
+    ? definition
+    : null;
+}
+
+function applyUnary(definition, argument) {
+  try {
+    return definition.bodyExpr.subs({ [definition.paramIds[0]]: argument });
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Morphisms, their endpoints, and the composition table.
+ *
+ * Endpoints are kept as value *keys* rather than as indices into an object
+ * list, because associativity is askable without an object set at all — it is
+ * a question about which pairs meet, not about what they meet at. `Cat` and
+ * the identity axiom supply objects and check membership separately.
+ */
+function categoryData(ce, morphismsExpr, sourceExpr, targetExpr, composeExpr, definitions) {
+  const morphisms = carrierElements(ce, morphismsExpr, definitions);
+  const source = unaryDefinition(sourceExpr, definitions);
+  const target = unaryDefinition(targetExpr, definitions);
+  const compose = binaryDefinition(composeExpr, definitions);
+  if (!morphisms || !morphisms.length || !source || !target || !compose) return null;
+
+  const keys = morphisms.map(valueKey);
+  if (keys.some((key) => key === null)) return null;
+  const index = new Map(keys.map((key, position) => [key, position]));
+
+  const sourceKeys = [];
+  const targetKeys = [];
+  const sourceValues = [];
+  const targetValues = [];
+  for (const morphism of morphisms) {
+    const from = applyUnary(source, morphism);
+    const to = applyUnary(target, morphism);
+    const fromKey = from === null ? null : valueKey(from);
+    const toKey = to === null ? null : valueKey(to);
+    if (fromKey === null || toKey === null) return null;
+    sourceKeys.push(fromKey);
+    targetKeys.push(toKey);
+    sourceValues.push(from);
+    targetValues.push(to);
+  }
+
+  // `null` where the pair does not compose, `-1` where the composite left the
+  // morphism set, otherwise its position. The three outcomes are the point.
+  const composites = [];
+  for (let f = 0; f < morphisms.length; f += 1) {
+    const row = [];
+    for (let g = 0; g < morphisms.length; g += 1) {
+      if (targetKeys[f] !== sourceKeys[g]) { row.push(null); continue; }
+      const value = applyBinary(compose, morphisms[f], morphisms[g]);
+      const key = value === null ? null : valueKey(value);
+      if (key === null) return null;
+      row.push(index.has(key) ? index.get(key) : -1);
+    }
+    composites.push(row);
+  }
+
+  return {
+    morphisms, index, keys, sourceKeys, targetKeys, sourceValues, targetValues,
+    composites, compose,
+  };
+}
+
+/**
+ * Composition is well-typed: it lands in the morphisms, and its endpoints are
+ * the outer ones.
+ *
+ * Endpoint membership in the object set is checked here too when objects are
+ * supplied, because a source that is not an object makes every axiom below a
+ * statement about nothing.
+ */
+function composesWell(data, objects) {
+  if (objects) {
+    const objectKeys = new Set(objects.map(valueKey));
+    if (objectKeys.has(null)) return null;
+    for (let f = 0; f < data.morphisms.length; f += 1) {
+      if (!objectKeys.has(data.sourceKeys[f])) return false;
+      if (!objectKeys.has(data.targetKeys[f])) return false;
+    }
+  }
+  for (let f = 0; f < data.morphisms.length; f += 1) {
+    for (let g = 0; g < data.morphisms.length; g += 1) {
+      const at = data.composites[f][g];
+      if (at === null) continue;
+      if (at < 0) return false;
+      if (data.sourceKeys[at] !== data.sourceKeys[f]) return false;
+      if (data.targetKeys[at] !== data.targetKeys[g]) return false;
+    }
+  }
+  return true;
+}
+
+/**
+ * Every object has an identity, and it is a unit on both sides.
+ *
+ * The unit laws are checked through the operation rather than through the
+ * table, for the same reason the group's associativity is: `c(i(s(f)), f)` is
+ * a perfectly good question even when some other composite left the carrier.
+ */
+function hasIdentities(data, objects, identity) {
+  const objectKeys = objects.map(valueKey);
+  if (objectKeys.some((key) => key === null)) return null;
+
+  const identityOf = new Map();
+  for (let x = 0; x < objects.length; x += 1) {
+    const unit = applyUnary(identity, objects[x]);
+    const key = unit === null ? null : valueKey(unit);
+    if (key === null) return null;
+    if (!data.index.has(key)) return false;
+    const at = data.index.get(key);
+    // An identity of `x` has to start and end at `x`, or it is some other
+    // morphism that happens to have been named.
+    if (data.sourceKeys[at] !== objectKeys[x]) return false;
+    if (data.targetKeys[at] !== objectKeys[x]) return false;
+    identityOf.set(objectKeys[x], unit);
+  }
+
+  for (let f = 0; f < data.morphisms.length; f += 1) {
+    const before = identityOf.get(data.sourceKeys[f]);
+    const after = identityOf.get(data.targetKeys[f]);
+    if (before === undefined || after === undefined) return false;
+    const left = applyBinary(data.compose, before, data.morphisms[f]);
+    const right = applyBinary(data.compose, data.morphisms[f], after);
+    if (left === null || right === null) return null;
+    if (valueKey(left) !== data.keys[f]) return false;
+    if (valueKey(right) !== data.keys[f]) return false;
+  }
+  return true;
+}
+
+/** Associativity, over the triples that actually compose. */
+function categoryAssociative(data) {
+  const { morphisms, sourceKeys, targetKeys, compose } = data;
+  for (let f = 0; f < morphisms.length; f += 1) {
+    for (let g = 0; g < morphisms.length; g += 1) {
+      if (targetKeys[f] !== sourceKeys[g]) continue;
+      const fg = applyBinary(compose, morphisms[f], morphisms[g]);
+      if (fg === null) return null;
+      for (let h = 0; h < morphisms.length; h += 1) {
+        if (targetKeys[g] !== sourceKeys[h]) continue;
+        const gh = applyBinary(compose, morphisms[g], morphisms[h]);
+        if (gh === null) return null;
+        const left = applyBinary(compose, fg, morphisms[h]);
+        const right = applyBinary(compose, morphisms[f], gh);
+        if (left === null || right === null) return null;
+        if (valueKey(left) !== valueKey(right)) return false;
+      }
+    }
+  }
+  return true;
+}
+
+/** The six arguments of a `Cat(...)`, however it reached us. */
+function categoryArguments(expr) {
+  return expr?.operator === 'CategoryStructure' && expr.nops === 6 ? expr.ops : null;
+}
+
+/**
+ * A functor, which is where naming a category earns its keep.
+ *
+ * Written out positionally a functor takes both categories and both maps —
+ * fourteen arguments, which nobody is going to type. So `Fun` takes the two
+ * categories by *name*:
+ *
+ *     C := Cat(O, M, s, t, c, i)
+ *     D := Cat(P, N, u, v, d, j)
+ *     Fun(C, D, F, G)
+ *
+ * A named proposition is inlined before dispatch, so both arrive here as the
+ * `Cat(...)` they were defined as and their six arguments are read straight
+ * off. `F` maps morphisms and `G` maps objects.
+ *
+ * Like `Mdl`, this does **not** re-check that `C` and `D` are categories.
+ * Those are separate obligations with their own names, and a line that
+ * silently re-checked its neighbours would hide which one actually failed.
+ */
+function functorTruth(ce, expr, definitions) {
+  if (expr.nops !== 4) return null;
+  const [sourceCategoryExpr, targetCategoryExpr, morphismMapExpr, objectMapExpr] = expr.ops;
+  const from = categoryArguments(sourceCategoryExpr);
+  const to = categoryArguments(targetCategoryExpr);
+  if (!from || !to) return null;
+
+  const domain = categoryData(ce, from[1], from[2], from[3], from[4], definitions);
+  const codomain = categoryData(ce, to[1], to[2], to[3], to[4], definitions);
+  const objects = carrierElements(ce, from[0], definitions);
+  const targetObjects = carrierElements(ce, to[0], definitions);
+  const sourceIdentity = unaryDefinition(from[5], definitions);
+  const targetIdentity = unaryDefinition(to[5], definitions);
+  const onMorphisms = unaryDefinition(morphismMapExpr, definitions);
+  const onObjects = unaryDefinition(objectMapExpr, definitions);
+  if (!domain || !codomain || !objects || !targetObjects
+    || !sourceIdentity || !targetIdentity || !onMorphisms || !onObjects) return null;
+
+  const targetObjectKeys = new Set(targetObjects.map(valueKey));
+  if (targetObjectKeys.has(null)) return null;
+
+  // The object map lands in the objects, and the image of an object is where
+  // the images of its morphisms have to start and end.
+  const objectImage = new Map();
+  for (const object of objects) {
+    const image = applyUnary(onObjects, object);
+    const key = image === null ? null : valueKey(image);
+    const objectKey = valueKey(object);
+    if (key === null || objectKey === null) return null;
+    if (!targetObjectKeys.has(key)) return false;
+    objectImage.set(objectKey, { value: image, key });
+  }
+
+  // Typing: F(f) is a morphism of D running between the images of f's endpoints.
+  const morphismImage = [];
+  for (let f = 0; f < domain.morphisms.length; f += 1) {
+    const image = applyUnary(onMorphisms, domain.morphisms[f]);
+    const key = image === null ? null : valueKey(image);
+    if (key === null) return null;
+    if (!codomain.index.has(key)) return false;
+    const at = codomain.index.get(key);
+    const start = objectImage.get(domain.sourceKeys[f]);
+    const end = objectImage.get(domain.targetKeys[f]);
+    if (start === undefined || end === undefined) return false;
+    if (codomain.sourceKeys[at] !== start.key) return false;
+    if (codomain.targetKeys[at] !== end.key) return false;
+    morphismImage.push(image);
+  }
+
+  // Identities: F(i_C(x)) = i_D(G(x)).
+  for (const object of objects) {
+    const unit = applyUnary(sourceIdentity, object);
+    if (unit === null) return null;
+    const image = applyUnary(onMorphisms, unit);
+    const target = applyUnary(targetIdentity, objectImage.get(valueKey(object)).value);
+    if (image === null || target === null) return null;
+    if (valueKey(image) !== valueKey(target)) return false;
+  }
+
+  // Composition: F(c(f, g)) = d(F(f), F(g)), over the pairs that compose.
+  for (let f = 0; f < domain.morphisms.length; f += 1) {
+    for (let g = 0; g < domain.morphisms.length; g += 1) {
+      if (domain.targetKeys[f] !== domain.sourceKeys[g]) continue;
+      const composite = applyBinary(domain.compose, domain.morphisms[f], domain.morphisms[g]);
+      if (composite === null) return null;
+      const image = applyUnary(onMorphisms, composite);
+      const composed = applyBinary(codomain.compose, morphismImage[f], morphismImage[g]);
+      if (image === null || composed === null) return null;
+      if (valueKey(image) !== valueKey(composed)) return false;
+    }
+  }
+  return true;
+}
+
+function categoryTruth(ce, expr, definitions) {
+  const op = expr.operator;
+  const arity = { CategoryStructure: 6, CategoryComposition: 5, CategoryIdentities: 6,
+    CategoryAssociative: 4 }[op];
+  if (expr.nops !== arity) return null;
+
+  // `Aso(M, s, t, c)` asks about composability alone and takes no objects.
+  const withObjects = op !== 'CategoryAssociative';
+  const [morphismsExpr, sourceExpr, targetExpr, composeExpr] = withObjects
+    ? expr.ops.slice(1, 5)
+    : expr.ops;
+  const data = categoryData(ce, morphismsExpr, sourceExpr, targetExpr, composeExpr, definitions);
+  if (!data) return null;
+
+  if (op === 'CategoryAssociative') return categoryAssociative(data);
+
+  const objects = carrierElements(ce, expr.ops[0], definitions);
+  if (!objects || !objects.length) return null;
+
+  if (op === 'CategoryComposition') return composesWell(data, objects);
+
+  const identity = unaryDefinition(expr.ops[5], definitions);
+  if (!identity) return null;
+  if (op === 'CategoryIdentities') return hasIdentities(data, objects, identity);
+
+  const typed = composesWell(data, objects);
+  if (typed === null) return null;
+  if (typed === false) return false;
+  const units = hasIdentities(data, objects, identity);
+  if (units === null) return null;
+  if (units === false) return false;
+  return categoryAssociative(data);
+}
+
 /**
  * Truth of one algebra predicate, or null when this prover cannot say.
  *
@@ -307,6 +637,78 @@ function moduleTruth(ce, expr, definitions) {
  * arithmetic could not evaluate. None of those are evidence either way, and
  * none of them are ever handed to the sampler.
  */
+/**
+ * A vector space is a module whose scalars form a field.
+ *
+ * `Mdl` checks only the four compatibility axioms — closure of the action,
+ * `1·x = x`, and the two distributive laws — and takes the rest on trust. A
+ * vector space is the whole claim, so the two suppositions are checked here
+ * as well: the vectors are an abelian group, and the scalars are a field.
+ *
+ * That last one is the difference that matters. `Z/4` is a perfectly good
+ * ring, and `Z/4` acting on itself is a perfectly good module, but it is not
+ * a vector space — 2 has no inverse — and this is what says so.
+ */
+function vectorSpaceTruth(ce, expr, definitions) {
+  if (expr.nops !== 9) return null;
+  const [
+    vectorsExpr, addExpr, zeroExpr,
+    scalarsExpr, scalarAddExpr, scalarMultiplyExpr, scalarZeroExpr, oneExpr,
+    actionExpr,
+  ] = expr.ops;
+
+  const vectors = structure(ce, vectorsExpr, addExpr, definitions);
+  if (!vectors) return null;
+  if (!isAbelianGroup(vectors, zeroExpr)) return false;
+
+  const field = algebraTruth(
+    ce,
+    ce.box(['FieldStructure', scalarsExpr, scalarAddExpr, scalarMultiplyExpr,
+      scalarZeroExpr, oneExpr]),
+    definitions,
+  );
+  if (field === null) return null;
+  if (field === false) return false;
+
+  return moduleTruth(
+    ce,
+    ce.box(['ModuleStructure', vectorsExpr, addExpr, scalarsExpr,
+      scalarAddExpr, scalarMultiplyExpr, oneExpr, actionExpr]),
+    definitions,
+  );
+}
+
+/**
+ * How many elements the exhaustive check ran over.
+ *
+ * This describes the *input* — the carrier the predicate was handed, read the
+ * same way the checker reads it — and not the search. Reporting the number of
+ * assignments would mean re-deriving what each axiom does, and a count
+ * computed differently from the one that actually ran is worse than none.
+ */
+export function algebraCarrierSize(ce, expr, definitions) {
+  if (!ALGEBRA_PREDICATES.has(expr?.operator)) return null;
+  // `Sbg(H, G, ...)` checks a subgroup against the group holding it.
+  if (expr.operator === 'Subgroup') {
+    return carrierElements(ce, expr.ops?.[1], definitions)?.length ?? null;
+  }
+  // Every category axiom runs over the *morphisms*, which is the second
+  // argument everywhere but `Aso`, and is reached through the source category
+  // for a functor. The object set is never what the exhaustion enumerates.
+  const carrier = categoryCarrier(expr) ?? expr.ops?.[0];
+  if (!carrier) return null;
+  return carrierElements(ce, carrier, definitions)?.length ?? null;
+}
+
+/** The set a category-family predicate actually enumerates, or null. */
+function categoryCarrier(expr) {
+  const op = expr.operator;
+  if (op === 'CategoryAssociative') return expr.ops?.[0];
+  if (CATEGORY_PREDICATES.has(op)) return expr.ops?.[1];
+  if (op === 'FunctorStructure') return categoryArguments(expr.ops?.[0])?.[1] ?? null;
+  return null;
+}
+
 export function algebraTruth(ce, expr, definitions) {
   const op = expr.operator;
 
@@ -331,6 +733,9 @@ export function algebraTruth(ce, expr, definitions) {
   }
 
   if (op === 'ModuleStructure') return moduleTruth(ce, expr, definitions);
+  if (op === 'VectorSpace') return vectorSpaceTruth(ce, expr, definitions);
+  if (op === 'FunctorStructure') return functorTruth(ce, expr, definitions);
+  if (CATEGORY_PREDICATES.has(op)) return categoryTruth(ce, expr, definitions);
 
   // Two operations on one carrier: rings and fields.
   if (op === 'RingDistributive' || op === 'RingStructure' || op === 'FieldStructure') {

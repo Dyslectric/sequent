@@ -8,9 +8,11 @@ sequent, `Γ ⊨ ∀x̄. φ`, which is where the name comes from.
 Try it at [sequent.dyslectric.dev](https://sequent.dyslectric.dev).
 
 The main page opens as a blank sheet; open `#demo` (or use the **Demo** link in
-the header) for a curated example sheet. The working sheet is saved locally and
-serialized live into its `#sheet=...` URL; copying the address copies the sheet.
-The demo always reloads from its curated defaults.
+the header) for a catalog of step-by-step proofs in algebra, logic, set theory,
+induction, group theory, analysis, topology, and complex arithmetic. Each demo
+has its own link and always reloads from its curated steps. The working sheet is
+saved locally and serialized live into its `#sheet=...` URL; copying the address
+copies the sheet.
 
 ```bash
 npm install
@@ -20,7 +22,8 @@ npm install
 npm run dev
 ```
 
-`npm test` runs the evaluation-core tests (4,172 cases, no browser needed).
+`npm test` runs thousands of deterministic evaluation and proof-demo checks
+without needing a browser.
 
 `npm run fuzz` runs deterministic property fuzzing over domain-scoped chain
 layout, formatting round trips, incomplete editor input, and exact equality,
@@ -28,6 +31,74 @@ inequality, implication, and equivalence proofs. Failures print their seed and c
 increase a run with, for example,
 `npm run fuzz -- --seed 12345 --iterations 50000 --engine-iterations 1000`.
 `npm run build` emits a static bundle to `dist/` — fonts included, no network at runtime.
+
+Two adversarial harnesses are run by hand rather than in `npm test`, because
+each takes a while and each asks a question a unit test cannot.
+`node probe-soundness.mjs` searches for a counterexample to every verdict the
+prover certifies. `node probe-kernel.mjs` does the same for the *checker*: it
+generates related polynomial relations and re-checks, by dense evaluation
+outside the kernel's own arithmetic, every pair it calls one proposition and
+every rewrite it marks verified. It also re-evaluates every bounded sum the
+kernel expands with an independent BigInt loop, and re-checks every Pratt
+certificate against trial division. Both take an optional seed and case count.
+
+The proposed architecture and rollout for step-by-step proof explanations is
+documented in [Proof traces and rules of inference](docs/proof-traces.md).
+
+A proved row now also reports *what it rests on*. Every step of a trace is
+checked by the kernel in `src/lib/kernel.js` and carries a trust level:
+`checked` where the kernel re-derived the step itself, `admitted` where the
+step names a theorem it does not prove, `witnessed` where the prover supplied a
+certificate the kernel checked, and `unchecked` where Compute Engine simply
+said so. The row shows the weakest of them — `proved · resting on 2 theorems`,
+`proved · witnessed`, or `proved · verified` where nothing was taken on trust —
+because a proof is only as strong as its weakest step.
+
+The rules of natural deduction and the order-preserving rewrites are checked
+today. The rewrites need exact arithmetic, which the kernel keeps to itself in
+`src/lib/kernel-polynomial.js` rather than sharing with the prover it checks:
+a checker and its subject agreeing because they are the same code is not
+agreement. That arithmetic is also what lets the kernel see `x > y` and
+`2x > 2y` as one proposition rather than two spellings.
+
+Four decision procedures have crossed that boundary. Even-power proofs carry
+the non-negative expression the prover found; positive-semidefinite quadratic
+proofs carry an exact rational sum-of-squares decomposition; propositional
+tautologies have their complete truth table re-run; and universal group
+identities are independently reduced in the free group. The kernel checks all
+four independently.
+
+Three kinds of arithmetic are checked without any witness at all, because the
+kernel can simply do the sum again. A closed rational (in)equality — `2+2=4`,
+`\frac{7}{3}>\frac{9}{4}`, `\gcd(12,18)=6` — is re-evaluated in exact BigInt
+rationals, so the most elementary rows in the application no longer rest on
+Compute Engine's word. A bounded `\sum` or `\prod` is expanded term by term
+and added up, so `\sum_{n=1}^{10}n=55` and
+`\sum_{n=1}^{3}\frac{1}{n}=\frac{11}{6}` are the kernel's own answers rather
+than the CAS's. And `\sqrt[n]{k}\notin\mathbb{Q}` is an integer root
+search: `\sqrt{2}` is irrational because 2 is not a perfect square, and the
+kernel looks for the square itself. That row previously carried no trace of
+any kind.
+
+The summand is re-read at each index rather than substituted into a
+polynomial, which is what admits `1/n`, `\gcd(n,6)` and nested sums alike. A
+bound the kernel cannot evaluate to an integer — `\sum_{k=1}^{n}`,
+`\sum_{n=1}^{\infty}` — is a sum it declines to read, and the row keeps
+whatever trust it had.
+
+Primality is the one piece of closed arithmetic the kernel will *not* redo,
+and `\mathbb{P}` is the one set Compute Engine has no meaning for, so both
+halves belong to this application. `7\in\mathbb{P}` is proved by searching for
+a Pratt certificate — a primitive root modulo 7 and the factorisation of 6 —
+and checked by six lines of modular exponentiation; `561\notin\mathbb{P}` is
+proved and checked by one divisor. A checker that factored would be a prover
+running on every keystroke, which is why this rule takes a witness where the
+rest of the arithmetic takes none.
+
+The sign charts, finite exhaustions, and remaining procedures are still
+admitted; turning each into a checkable witness is the plan in
+[A proof kernel for Sequent](docs/proof-kernel.md), continued in
+[Beyond the oracle](docs/beyond-the-oracle.md).
 
 ## Desktop
 
@@ -209,9 +280,9 @@ the on-screen keys, or write `⌊ ⌋` / `⌈ ⌉`).
 The on-screen keyboard is split by what a line is doing. **expr** builds
 values — the number pad, constants, powers and radicals, the rounding and
 trigonometric functions. **rel** turns those into a claim — the relations and
-the logical connectives. **defn** names things. Then **{∈}**, **ε–δ**, **τ**
-and **grp** carry sets, analysis, topology and algebra, with MathLive's own
-**abc** and **greek** tabs still there behind them.
+the logical connectives. Then **{∈}**, **ε–δ**, **τ** and **alg** carry sets,
+analysis, topology and algebra. **defn**, all the way on the right, names things
+and includes Latin and Greek letter layers.
 
 **defn** is a QWERTY keyboard with two shifts. `⇧` changes case and `α`
 changes alphabet, so the four combinations are four layers and each shift only
@@ -232,9 +303,9 @@ is typed into means: a hyphen and an underscore inside a serif name, a minus
 sign and a subscript outside one. That is why the serif toggle sits on **defn**
 as well — `\text{max-speed}` is a name, while `max-speed` is a subtraction.
 
-`:=` appears on **expr**, **rel** and **defn**, since a definition can be
-written on any of them. **expr** deliberately carries no comma and no mode
-switch, so nothing on it does anything but build a value.
+`:=` and the serif toggle live on **defn**, keeping definition controls out of
+the expression and relation layers. **expr** deliberately carries no comma or
+mode switch, so nothing on it does anything but build a value.
 
 - **Enter** starts a new line. **Backspace** on an empty line removes it. Arrow
   keys move between lines.
@@ -250,7 +321,11 @@ switch, so nothing on it does anything but build a value.
   Alt+E and Alt+F.
 - **`_`** subscripts. A subscript is part of the name (`v_max` is one variable),
   and is formatted independently of its base — `v` stays math-italic while a
-  serif subscript stays serif.
+  serif subscript stays serif. Once a name has been defined as a matrix or
+  vector, a numeric subscript accesses it instead: `A_{2,1}` is the entry in
+  row 2, column 1, and `v_2` is the second component. The same notation works
+  directly on matrix-, vector-, and tuple-valued function results, such as
+  `A(3)_{2,1}` or `v(3)_2`. Indices are one-based.
 - Type `and`, `or`, or `not` in math mode (or use the `∧`, `∨`, and `¬` keys)
   for logical connectives. Parentheses group propositions. Precedence is
   `¬`, then `∧`, then `∨`, then `⟹`, then `⟺`.
@@ -282,6 +357,17 @@ above it, and everything is recomputed top-to-bottom on every edit.
 Once a name is defined, expressions using it become numeric. Where an
 undefined name remains, the line stays algebraic and reports which name is missing.
 
+Matrices use ordinary multiplication notation. Compatible matrix-matrix,
+matrix-column-vector, and row-vector-matrix products work with adjacency or
+`\times`; incompatible shapes are refused. Products of named matrices preserve
+their written order, so `AB` and `BA` can have different values.
+
+Vector products accept tuples, row vectors, and column vectors. `u\cdot v` is
+the dot product/real inner product regardless of orientation. For two
+three-component vectors, `u\times v` is the cross product and preserves the
+left vector's row, column, or tuple presentation. Outside a pair of vectors,
+`\times` keeps its existing matrix, numeric, or Cartesian-product meaning.
+
 Definitions may also hold propositions or return propositions:
 
 ```
@@ -294,6 +380,30 @@ T ∧ P(1)                       true
 Predicate bodies may use the full logical language, including `∧`, `∨`, `¬`,
 `⟹`, and `⟺`. A predicate call or propositional constant works both as a
 standalone truth-valued line and as an operand inside a larger proposition.
+
+### Named lemmas
+
+A lemma is an ordinary proposition-valued definition. Give the statement a
+name, prove the named statement on a following line, and use it as a premise in
+later demonstrations:
+
+```
+squareNonnegative(x) := x² ≥ 0              predicate defined
+∀x ∈ ℝ, squareNonnegative(x)                true, proved
+squareNonnegative(x) ⊢ x² + 1 > 0           true, proved
+```
+
+Long lemma names use the same serif text channel as other long identifiers.
+There is no library of lemma buttons on the keyboard and no hidden trusted
+theorem store. When a named proposition occurs inside `⊢`, `⟹`, `∧`, or another
+statement, its definition is expanded transitively and the resulting claim is
+checked again by the ordinary exact machinery. The definition line only names
+a claim; it does not certify it. A false named claim is still false when it is
+evaluated.
+
+This makes a proof demonstration explicit: first establish each named lemma,
+then show the conclusion from those names with a sequent. Assumptions remain
+local to that sequent rather than silently changing every line below it.
 
 ### Sets
 
@@ -315,7 +425,7 @@ S = {x ∈ ℝ | -2 < x ∧ x < 2} true, proved
 The set keyboard supplies `∈`, `∉`, subset/superset relations, `∪`, `∩`, set
 difference, Cartesian products `×`, power sets `𝒫(A)`, finite-set and set-builder
 templates, `∅`, and the standard number
-sets `ℕ`, `ℤ`, `ℚ`, `ℝ`, and `ℂ`. Universal and existential propositions over
+sets `ℕ`, `ℤ`, `ℚ`, `ℝ`, `ℂ`, and `ℙ`. Universal and existential propositions over
 finite sets are evaluated exactly; restricted universal propositions such as
 `∀x ∈ S, P(x)` are lowered to implication. Set-builder membership, subset, and
 equality become arithmetic propositions, so they inherit the polynomial proof
@@ -342,6 +452,23 @@ because a sampler treats `card` as an ordinary unknown and will disprove claims
 about it using values no cardinality could take.
 
 `|x|` remains absolute value throughout — cardinality is spelled `card`.
+
+### The primes
+
+`ℙ` is the one set Compute Engine has no meaning for, so it is the one this app
+decides itself:
+
+```
+7 ∈ ℙ                                  true, proved · witnessed
+104729 ∈ ℙ                             true, proved · witnessed
+561 ∉ ℙ                                true, proved · witnessed — 3 divides it
+1 ∉ ℙ                                  true, proved · witnessed
+x ∈ ℙ                                  undecided
+```
+
+Only a literal integer is settled. `x ∈ ℙ` is a real statement about `x` and
+stays undecided rather than being guessed at, and a non-integer is not a
+question this set answers.
 
 ### Quantifying over ℕ and ℤ
 
@@ -524,7 +651,7 @@ actually failed.
 Names are single letters here for a reason — `rp` is not an identifier in math
 mode, it is `r · p`. Longer names go in the serif text channel.
 
-The keyboard's `grp` layer carries all of these; `group`, `abelian`, `subgroup`,
+The keyboard's `alg` layer carries all of these; `group`, `abelian`, `subgroup`,
 `closure`, `assoc`, `identity`, `inverses`, `ring`, `field`, `distributive`,
 `unity`, and `module` are the textual shortcuts.
 
@@ -570,6 +697,84 @@ trivially true. The prover reads the term syntax itself.
 
 Every certificate is checked by the fuzzer against S₃, the smallest
 non-abelian group, under all thirty-six substitutions for its two generators.
+
+### Small categories
+
+A category differs from every structure above in one way that shapes the
+notation: **composition is partial**. `c(f, g)` is a question only when `f` and
+`g` meet. Making source and target arithmetic is what lets a sheet say so
+without any notion of an ordered pair — encode a morphism `i → j` as `n·i + j`
+and the endpoints fall out of `floor` and `mod`:
+
+```
+O := {0, 1, 2}                 objects
+M := {0, 1, 2, 4, 5, 8}        the poset 0 ≤ 1 ≤ 2, with i → j as 3i + j
+s(m) := floor(m/3)             source
+t(m) := mod(m, 3)              target
+c(f, g) := 3s(f) + t(g)        composition
+i(x) := 4x                     identities
+
+Cat(O, M, s, t, c, i)          true, proved
+```
+
+**`c(f, g)` is `f` then `g`** — diagrammatic order, so the composable condition
+reads `t(f) = s(g)` with the arguments in the order they are written. This is
+the opposite of the `g ∘ f` convention, and it is the one thing here a reader
+has to be told rather than shown.
+
+As with groups, each axiom is separately nameable:
+
+```
+Cmp(O, M, s, t, c)             composition lands in M, with the outer endpoints
+Idt(O, M, s, t, c, i)          every object has an identity, and it is a unit
+Aso(M, s, t, c)                associativity, over the triples that compose
+```
+
+`Aso` takes no object set, because associativity is a question about which
+pairs meet rather than about what they meet at.
+
+A monoid is a one-object category, including one that is not a group:
+
+```
+O := {0}
+M := {0, 1, 2, 3, 4, 5}
+s(m) := 0    t(m) := 0    c(f, g) := mod(f·g, 6)    i(x) := 1
+Cat(O, M, s, t, c, i)          true, proved
+Inv(M, c, 1)                   false — 2 has no inverse
+```
+
+Refusals are as informative as elsewhere: dropping the composite `0 → 2` from
+`M` fails `Cmp`; adding an object with no identity fails `Idt`; a genuinely
+non-associative operation fails `Aso`.
+
+**Functors take their categories by name.** Written out positionally a functor
+needs both categories and both maps — fourteen arguments, which nobody is going
+to type. A named proposition is inlined before dispatch, so naming the
+categories is enough:
+
+```
+C := Cat(O, M, s, t, c, i)                      the poset
+D := Cat(P, N, u, v, d, j)                      ℤ/3 as a one-object category
+F(m) := mod(t(m) - s(m), 3)                     on morphisms
+G(x) := 0                                       on objects
+Fun(C, D, F, G)                                 true, proved
+```
+
+`C` on a line of its own is an ordinary askable row, so a category can be
+named, checked, and then used. Three laws are checked: `F` lands in the target
+category between the images of the endpoints, `F` carries identities to
+identities, and `F` preserves composition over the pairs that compose. Each
+fails on its own — squaring the label breaks composition, shifting it by one
+moves identities, and an object map that disagrees with the morphism map fails
+the typing.
+
+Like `Mdl`, `Fun` does **not** re-check that `C` and `D` are categories. Those
+are separate obligations with their own names, and a line that silently
+re-checked its neighbours would hide which one actually failed.
+
+The keyboard offers `𝖢𝖺𝗍` and `𝖥𝗎𝗇` beside `𝖦𝗋𝗉`, and `𝖢𝗆𝗉`, `𝖨𝖽𝗍`, `𝖠𝗌𝗈`
+beside the group axioms; `category` and `functor` are the textual shortcuts.
+`𝖠𝗌𝖼` remains the group's associativity, whose arity and arguments differ.
 
 ### What this algebra is not
 
@@ -847,6 +1052,9 @@ Sampling is deterministic, so the same sheet always gives the same verdict.
 | `src/lib/identifiers.js` | rewrites user names to parser-safe symbols, and back |
 | `src/lib/engine.js` | classifies each line, applies definitions, formats results |
 | `src/lib/decide.js` | the symbolic + sampling decision procedure |
+| `src/lib/proof-trace.js` | the rule registry, and the trace a successful branch builds |
+| `src/lib/kernel.js` | re-checks a finished trace step by step, and rates what it rests on |
+| `src/lib/kernel-polynomial.js` | the kernel's own exact rational arithmetic, shared with nothing |
 | `src/lib/complex-proof.js` | exact real-part, conjugation, exponential, and cosine rewrites |
 | `src/lib/sets.js` | set values, set-builders, extensional lowering, finite set decisions |
 | `src/lib/analysis.js` | certificate dispatch: epsilon-delta, induction, compactness, metric balls, finite and intensional topology proofs |
@@ -904,7 +1112,8 @@ applied to arguments — before parsing, and rewritten back for display.
   quartic is not. Statements involving absolute values are not case-split, so
   the triangle inequality is still sampled. Other cases fall back to sampling.
 - The supported set fragment is extensional rather than a general axiomatic set
-  theory: finite sets, standard numeric domains, numeric set-builders, ordinary
+  theory: finite sets, standard numeric domains, the primes, numeric
+  set-builders, ordinary
   set operations, power sets, Cartesian products, membership, subset/superset,
   equality, finite/restricted quantifiers, and finite indexed-family
   materialization. General ZF constructions, unrestricted nested

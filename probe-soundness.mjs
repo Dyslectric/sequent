@@ -253,6 +253,39 @@ for (let trial = 0; trial < 300; trial++) {
 }
 console.log(`  ${eqvChecked} generated, ${eqvProved} proved`);
 
+console.log('== divergent integrals are never answered ==');
+/**
+ * Compute Engine is not merely silent about these — it is wrong. Probed
+ * directly, `\int_{-1}^{1}dx/x = 0` and `\int_{-1}^{1}dx/x^2 = -2` both come
+ * back True, the second for an integrand that is positive everywhere. The
+ * continuity gate in `integral.js` is what keeps those answers out of a
+ * verdict, and this is the check that it still does.
+ *
+ * A refusal is the pass condition. Any truth value at all is a failure,
+ * whichever way it points: there is no true statement to be made here.
+ */
+const DIVERGENT = [
+  ['\\int_{-1}^{1}\\frac{1}{x}\\,dx=0', 'principal value only'],
+  ['\\int_{-1}^{1}\\frac{1}{x}\\,dx=1', 'no value'],
+  ['\\int_{-1}^{1}\\frac{1}{x^2}\\,dx=-2', 'positive integrand, negative claim'],
+  ['\\int_{-1}^{1}\\frac{1}{x^2}\\,dx=2', 'diverges to +infinity'],
+  ['\\int_{0}^{1}\\frac{1}{x}\\,dx=1', 'pole at the lower limit'],
+  ['\\int_{-1}^{0}\\frac{1}{x}\\,dx=0', 'pole at the upper limit'],
+  ['\\int_{-2}^{2}\\frac{1}{x-1}\\,dx=0', 'pole inside the interval'],
+  ['\\int_{-1}^{1}\\frac{1}{x^3}\\,dx=0', 'odd pole, principal value only'],
+  ['\\int_{0}^{1}\\frac{1}{x(1-x)}\\,dx=0', 'poles at both limits'],
+  ['\\int_{1}^{\\infty}\\frac{1}{x}\\,dx=1', 'divergent tail'],
+];
+let divergentChecked = 0;
+for (const [line, why] of DIVERGENT) {
+  divergentChecked++;
+  const result = new Sheet().evaluateAll([line])[0];
+  if (result.kind === 'truth' && result.value !== null) {
+    flag(line, `answered ${result.value} for a divergent integral (${why})`);
+  }
+}
+console.log(`  ${divergentChecked} divergent integrals, all refused`);
+
 const totalProved = proved + eqProved + soloProved + eqvProved;
 console.log(`\n${totalProved} total proofs checked against dense evaluation`);
 console.log(`${witnesses} exact counterexamples re-checked at the stated point`);

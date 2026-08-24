@@ -928,6 +928,131 @@ check('a sum the kernel cannot expand keeps the trust it had', () => {
   return null;
 });
 
+/**
+ * Constructed witnesses, end to end.
+ *
+ * `logic.exists-intro` had a checker and no prover for two phases, so these
+ * rows were undecided however obvious their witness was. What matters is not
+ * that they are proved but that they are *checked*: the kernel re-substitutes
+ * the named witness and re-derives the claim, so a wrong witness cannot pass.
+ */
+check('an existential names a witness and is checked against it', () => {
+  for (const [lines, witness] of [
+    [['\\exists x\\in\\mathbb{R}, x^2=4'], '2'],
+    [['\\exists y\\in\\mathbb{N}, y>3'], '4'],
+    [['\\exists y\\in\\{1,2,3\\}, y>1'], '2'],
+    [['\\exists q\\in\\mathbb{Q}, 2q=1'], '\\frac{1}{2}'],
+  ]) {
+    const row = new Sheet().evaluateAll(lines).at(-1);
+    if (row.value !== true) return `${lines.at(-1)} came back ${row.value}`;
+    if (row.proof?.trust !== 'verified') return `${lines.at(-1)} is ${row.proof?.trust}`;
+    const root = row.proof.steps.find((step) => step.id === row.proof.root);
+    if (root.data?.witnessLatex !== witness) {
+      return `${lines.at(-1)} cited ${root.data?.witnessLatex}, expected ${witness}`;
+    }
+  }
+  return null;
+});
+
+check("the reader's own name is preferred to a number the search reached", () => {
+  const row = new Sheet().evaluateAll(['w:=3', '\\exists x\\in\\mathbb{R}, x^2=9']).at(-1);
+  if (row.value !== true) return `came back ${row.value}`;
+  const root = row.proof.steps.find((step) => step.id === row.proof.root);
+  return root.data?.witnessLatex === 'w' || root.data?.witnessLatex === '3'
+    ? null : `cited ${root.data?.witnessLatex}`;
+});
+
+check('a prime witness carries the certificate that placed it in the domain', () => {
+  const row = new Sheet().evaluateAll(['\\exists p\\in\\mathbb{P}, p>10']).at(-1);
+  if (row.value !== true) return `came back ${row.value}`;
+  const membership = row.proof.steps.find((step) => step.rule === 'arithmetic.primality');
+  if (!membership) return `cited ${JSON.stringify(row.proof.steps.map((s) => s.rule))}`;
+  // Claiming the CAS evaluated this would be claiming work it cannot do:
+  // Compute Engine has no primes.
+  return membership.trust === 'certified' ? null : `membership is ${membership.trust}`;
+});
+
+/**
+ * Finding no witness is not a refutation.
+ *
+ * The search is a search. A statement whose witness is outside the candidates
+ * has to stay undecided, or the row would be reporting the limits of an
+ * enumeration as a fact about the mathematics.
+ */
+check('a search that finds nothing decides nothing', () => {
+  for (const line of [
+    '\\exists n\\in\\mathbb{N}, n<0',
+    '\\exists x\\in\\mathbb{R}, x^2<0',
+    '\\exists x\\in\\mathbb{R}, x^2=2',
+    '\\exists x\\in\\mathbb{R}, x^3=100',
+  ]) {
+    const row = new Sheet().evaluateAll([line]).at(-1);
+    if (row.value !== null) return `${line} came back ${row.value}`;
+  }
+  return null;
+});
+
+check('the kernel will not verify an existential its premises do not reach', () => {
+  // Both premises are true, the witness is named, and none of it proves the
+  // claim: 3 is a real number and 9 is 9, but 3^2 is not 4. A checker that
+  // trusted `witnessLatex` rather than re-substituting would accept this.
+  const forged = trace(
+    { id: 's1', rule: 'engine.exact-evaluation', conclusionLatex: '3\\in\\R' },
+    { id: 's2', rule: 'engine.exact-evaluation', conclusionLatex: '9=9' },
+    {
+      id: 's3',
+      rule: 'logic.exists-intro',
+      premises: ['s1', 's2'],
+      conclusionLatex: '\\exists x\\in\\R, x^2=4',
+      data: { witnessLatex: '3' },
+    },
+  );
+  if (rootTrust(certify(forged)) === 'verified') return 'a mismatched witness was verified';
+
+  // Nor without the membership premise, however well the body checks out.
+  const unplaced = trace(
+    { id: 's1', rule: 'engine.exact-evaluation', conclusionLatex: '4=4' },
+    {
+      id: 's2',
+      rule: 'logic.exists-intro',
+      premises: ['s1'],
+      conclusionLatex: '\\exists x\\in\\R, x^2=4',
+      data: { witnessLatex: '2' },
+    },
+  );
+  if (rootTrust(certify(unplaced)) === 'verified') return 'an unplaced witness was verified';
+
+  // And a step naming no witness at all has supplied no evidence.
+  const unnamed = trace(
+    { id: 's1', rule: 'engine.exact-evaluation', conclusionLatex: '2\\in\\R' },
+    { id: 's2', rule: 'engine.exact-evaluation', conclusionLatex: '4=4' },
+    {
+      id: 's3',
+      rule: 'logic.exists-intro',
+      premises: ['s1', 's2'],
+      conclusionLatex: '\\exists x\\in\\R, x^2=4',
+    },
+  );
+  return rootTrust(certify(unnamed)) === 'verified' ? 'an unnamed witness was verified' : null;
+});
+
+check('the kernel checks membership of a literal in a standard domain', () => {
+  for (const [latex, expected] of [
+    ['2\\in\\mathbb{R}', 'verified'], ['2\\in\\mathbb{N}', 'verified'],
+    ['-2\\in\\mathbb{N}', 'rejected'], ['\\frac{1}{2}\\in\\mathbb{Z}', 'rejected'],
+    ['\\frac{1}{2}\\in\\mathbb{Q}', 'verified'], ['2\\in\\{1,2,3\\}', 'verified'],
+    ['5\\in\\{1,2,3\\}', 'rejected'], ['5\\notin\\{1,2,3\\}', 'verified'],
+    // A set with a name in it is one the kernel cannot settle by looking.
+    ['2\\in\\{1,x,3\\}', 'oracle'], ['\\pi\\in\\mathbb{R}', 'oracle'],
+  ]) {
+    const problem = roots(expected, trace({
+      id: 's1', rule: 'engine.exact-evaluation', conclusionLatex: latex,
+    }));
+    if (problem) return `${latex}: ${problem}`;
+  }
+  return null;
+});
+
 check('the kernel refuses a bounded sum the expansion contradicts', () => {
   for (const latex of ['\\sum_{n=1}^{10}n=56', '\\prod_{n=1}^{5}n<120',
     '\\sum_{n=1}^{3}\\frac{1}{n}=2']) {

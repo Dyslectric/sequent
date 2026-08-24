@@ -20,6 +20,7 @@ import {
   lowerAnalysisProposition,
 } from './analysis.js';
 import { ALGEBRA_PREDICATES, algebraCarrierSize } from './algebra.js';
+import { existentialWitness } from './witness.js';
 import { collectIntegrals, integralObstruction } from './integral.js';
 import {
   indexOfTopLevel,
@@ -1722,7 +1723,16 @@ export class Sheet {
   setProofContext(proofBase, source, latexOf, { certificate, generalized, untouched }) {
     if (!proofBase) return null;
     if (certificate) {
-      return { ...proofBase, statementLatex: source.latex, decidedBy: certificate };
+      return {
+        ...proofBase,
+        statementLatex: source.latex,
+        decidedBy: certificate,
+        // A certificate whose rule takes premises supplies them here, and they
+        // join whatever the engine already discharged. `logic.exists-intro` is
+        // the first: without its two obligations the kernel can re-substitute
+        // nothing and the step stands admitted rather than checked.
+        premises: [...(proofBase.premises ?? []), ...(certificate.premises ?? [])],
+      };
     }
     if (generalized) {
       return {
@@ -1868,7 +1878,46 @@ export class Sheet {
       decidedExpr = analysis.expr;
     }
 
-    if (containsSetConstruct(decidedExpr, this.definitions)) {
+    // A named witness settles an existential outright, and over an infinite
+    // domain it is the only thing that can — there is nothing to enumerate,
+    // which is why these rows were undecided however obvious their witness
+    // was. This runs before the set lowering because the lowering flattens an
+    // existential into a disjunction, and a disjunction has forgotten which
+    // of its cases was the true one.
+    //
+    // Finding no witness proves nothing, so everything below still runs.
+    const witness = existentialWitness(this.ce, decidedExpr, this.definitions);
+    if (witness) {
+      const witnessLatex = latexOf(witness.witnessExpr);
+      verdict = decideStatement(this.ce, this.ce.box('True'), {
+        complex,
+        allowSampling: false,
+        domains,
+        allowDirectEvaluation: true,
+        realSymbols: new Set(analysis?.realSymbols ?? []),
+        proofContext: this.setProofContext(proofBase, source, latexOf, {
+          certificate: {
+            rule: 'logic.exists-intro',
+            data: { witnessLatex },
+            // The kernel checks this rule by re-substituting, so it wants both
+            // obligations as premises: the body at the witness, and the
+            // witness in the domain. Each was settled by exact evaluation and
+            // says so.
+            premises: [
+              {
+                rule: witness.membership.rule,
+                data: witness.membership.data,
+                conclusionLatex: latexOf(witness.memberExpr),
+              },
+              {
+                rule: 'engine.exact-evaluation',
+                conclusionLatex: latexOf(witness.bodyExpr),
+              },
+            ],
+          },
+        }),
+      });
+    } else if (containsSetConstruct(decidedExpr, this.definitions)) {
       // Lower before evaluating so Compute Engine cannot mistake two symbolic
       // set-builders for unequal opaque values. Closed strict-subset and finite
       // existential forms remain unchanged and are still decided directly.

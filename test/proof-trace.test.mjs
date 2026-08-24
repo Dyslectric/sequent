@@ -723,9 +723,31 @@ for (const [label, lines] of mustStayOpaque) {
   });
 }
 
-check('an existential is not passed off as a generalization', () => {
+/**
+ * An existential now has a proof, and it is its own.
+ *
+ * This used to assert that the row carried no derivation at all, which was
+ * right while nothing could prove it: whatever the lowering did to an
+ * existential, describing it would have described something the reader did not
+ * write. Now a witness is found and named, so the row is proved — but the
+ * original hazard is unchanged and still worth guarding. An existential
+ * described as a *generalization* would be the reader's claim turned inside
+ * out, and no premise may be smuggled in unproved.
+ */
+check('an existential cites its witness, and is not passed off as a generalization', () => {
   const row = new Sheet().evaluateAll(['\\exists x\\in\\mathbb{R},x^2=4']).at(-1);
-  return row.proofStatus === 'available' ? 'an unlowered existential claimed a proof' : null;
+  if (row.value !== true) return `value ${row.value}`;
+  if (row.proofStatus !== 'available') return `status ${row.proofStatus}`;
+  const rules = row.proof.steps.map((step) => step.rule);
+  if (rules.includes('logic.universal-generalization')) {
+    return `described as a generalization: ${JSON.stringify(rules)}`;
+  }
+  const root = row.proof.steps.find((step) => step.id === row.proof.root);
+  if (root?.rule !== 'logic.exists-intro') return `root rule ${root?.rule}`;
+  if (!root.data?.witnessLatex) return 'the witness was not named';
+  // Both obligations have to be there: the body at the witness, and the
+  // witness in the domain. A step citing neither is an assertion.
+  return root.premises.length === 2 ? null : `cited ${root.premises.length} premises`;
 });
 
 console.log('== algebra and groups ==');

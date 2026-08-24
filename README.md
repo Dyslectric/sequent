@@ -453,6 +453,35 @@ about it using values no cardinality could take.
 
 `|x|` remains absolute value throughout — cardinality is spelled `card`.
 
+### Existentials name their witness
+
+`∃x ∈ ℝ, x² = 4` used to be undecided, and naming the witness first did not
+help. Now the witness is searched for, named on the row, and checked:
+
+```
+w := 2
+∃x ∈ ℝ, x² = 4                 true, proved · verified — cites w
+∃y ∈ ℕ, y > 3                  true, proved · verified — cites 4
+∃q ∈ ℚ, 2q = 1                 true, proved · verified — cites ½
+∃p ∈ ℙ, p > 10                 true, proved · witnessed — cites 11
+```
+
+The trace carries both obligations, because that is what the kernel checks: a
+premise proving the body at the witness, and a premise placing the witness in
+the domain. It re-substitutes and re-derives, so a wrong witness cannot pass —
+naming `3` for `x² = 4` leaves the step admitted however true its premises are.
+
+Names you defined are tried first, so a sheet that says `w := 2` cites `w`
+rather than whatever the search reached. The membership premise cites what
+actually settled it: a prime witness carries its Pratt certificate, because
+claiming Compute Engine evaluated `11 ∈ ℙ` would be claiming work it cannot do.
+
+**Finding no witness decides nothing.** The search is a search — integers to
+twelve and a handful of small rationals — so a statement whose witness lies
+outside it stays `undecided` rather than being called false. `∃x ∈ ℝ, x² = 2`
+is true and out of reach. So is anything needing a witness that *depends* on a
+quantified variable: `∀x ∈ ℕ, ∃y ∈ ℕ, y > x` wants a function, not a number.
+
 ### The primes
 
 `ℙ` is the one set Compute Engine has no meaning for, so it is the one this app

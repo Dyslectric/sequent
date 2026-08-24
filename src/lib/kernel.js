@@ -60,6 +60,7 @@ import {
   powerPolynomial,
   rational,
   samePolynomial,
+  sameRational,
   scalarRatio,
   scalePolynomial,
   signOfRational,
@@ -121,6 +122,12 @@ const ALIASES = new Map(Object.entries({
   '\\Leftrightarrow': '\\iff',
   '\\Longleftrightarrow': '\\iff',
   '\\varnothing': '\\emptyset',
+  // Compute Engine prints a set with `\lbrace`; the reader types `\{`. Without
+  // this they are different token sequences, so a premise placing a witness in
+  // `\lbrace1, 2, 3\rbrace` fails to match a conclusion quantified over
+  // `\{1,2,3\}` and the existential stands admitted for a spelling.
+  '\\lbrace': '\\{',
+  '\\rbrace': '\\}',
 }));
 
 const OPEN = new Map(Object.entries({
@@ -292,6 +299,23 @@ function readProduct(cursor) {
       const divisor = constantOf(next);
       if (!divisor || isZeroRational(divisor)) return null;
       total = scalePolynomial(total, divRational(ONE, divisor));
+      continue;
+    }
+    // Compute Engine prints the remainder infix, so the reader that already
+    // knows `\operatorname{mod}(a,b)` has to know `a \bmod b` as well or it
+    // cannot check its own output. Same restraint as the prefix form: a
+    // non-negative dividend and a positive divisor, where the truncating and
+    // flooring conventions agree.
+    if (token === '\\bmod') {
+      cursor.at += 1;
+      const next = readPower(cursor);
+      if (!next) return null;
+      const dividend = constantOf(total);
+      const divisor = constantOf(next);
+      if (!dividend || !divisor || dividend.d !== 1n || divisor.d !== 1n) return null;
+      const value = INTEGER_FUNCTIONS.get('mod')([dividend.n, divisor.n]);
+      if (value === null) return null;
+      total = constantPolynomial(rational(value, 1n));
       continue;
     }
     // Juxtaposition is multiplication: `2ab`, `x^2y`, `(x+1)(x-1)`.
@@ -1362,10 +1386,98 @@ function checkMultiple(conclusion) {
  * left alone.
  */
 function checkGroundArithmetic(conclusion) {
-  if (conclusion.type !== 'rel' || !conclusion.difference) return UNKNOWN;
+  // A conjunction of ground relations is ground arithmetic, and saying
+  // otherwise made the obligations of a constructed witness read worse than
+  // they are: `0 < 1/2 \land 1/2 < 1` is two comparisons the kernel can do.
+  if (conclusion.type === 'and' || conclusion.type === 'or') {
+    const parts = conclusion.ops.map(checkGroundArithmetic);
+    const all = conclusion.type === 'and';
+    if (parts.some((part) => part === (all ? REFUSED : CHECKED))) return all ? REFUSED : CHECKED;
+    if (parts.every((part) => part === (all ? CHECKED : REFUSED))) return all ? CHECKED : REFUSED;
+    return UNKNOWN;
+  }
+  if (conclusion.type === 'not') {
+    const inner = checkGroundArithmetic(conclusion.op);
+    if (inner === CHECKED) return REFUSED;
+    if (inner === REFUSED) return CHECKED;
+    return UNKNOWN;
+  }
+  if (conclusion.type !== 'rel') return UNKNOWN;
+  const membership = checkNumericMembership(conclusion);
+  if (membership !== UNKNOWN) return membership;
+  if (!conclusion.difference) return UNKNOWN;
   const value = constantOf(conclusion.difference);
   if (!value) return UNKNOWN;
   return satisfiedBy(conclusion.operator, signOfRational(value)) ? CHECKED : REFUSED;
+}
+
+/**
+ * Which of the standard domains a rational constant belongs to.
+ *
+ * `\mathbb{N}` here is Compute Engine's — the non-negative integers, zero
+ * included — because that is the set the reader's `\mathbb{N}` was parsed as,
+ * and the kernel checks the statement that was made rather than the one a
+ * different convention would have made.
+ */
+const NUMERIC_DOMAINS = new Map(Object.entries({
+  '\\N': (value) => value.d === 1n && value.n >= 0n,
+  '\\Z': (value) => value.d === 1n,
+  '\\Q': () => true,
+  '\\R': () => true,
+  '\\C': () => true,
+}));
+
+/**
+ * `2 \in \mathbb{R}`, which is arithmetic however it is spelled.
+ *
+ * Without this the obligations of `logic.exists-intro` are half-checked: the
+ * kernel re-derives the body at the witness and then takes the CAS's word for
+ * the witness being a number at all, which drags a fully checked existential
+ * down to `oracle` over the easiest step in it.
+ *
+ * Only a rational *literal* is decided. `\sqrt{2} \in \mathbb{R}` leaves an
+ * indeterminate on the left and abstains — `arithmetic.integer-root` is the
+ * rule that settles radicals, and it does so by a search this one has no
+ * business duplicating.
+ */
+function checkNumericMembership(conclusion) {
+  const claimsMember = conclusion.operator === '\\in';
+  if (!claimsMember && conclusion.operator !== '\\notin') return UNKNOWN;
+  const polynomial = polynomialOf(conclusion.left);
+  const value = polynomial && constantOf(polynomial);
+  if (!value) return UNKNOWN;
+
+  const domain = NUMERIC_DOMAINS.get(join(conclusion.right));
+  if (domain) return domain(value) === claimsMember ? CHECKED : REFUSED;
+
+  const listed = finiteSetElements(conclusion.right);
+  if (!listed) return UNKNOWN;
+  const present = listed.some((element) => sameRational(element, value));
+  return present === claimsMember ? CHECKED : REFUSED;
+}
+
+/**
+ * The elements of `\{1, 2, 3\}` as exact rationals, or null.
+ *
+ * Null for anything with a non-constant in it: a set with a name in it is a
+ * set whose membership the kernel cannot settle by looking, and guessing that
+ * an unread element is not the one would turn abstention into a refusal.
+ */
+function finiteSetElements(tokens) {
+  const body = peelParentheses(tokens);
+  if (body[0] !== '\\{' || matchingBrace(body, 0) !== body.length - 1) return null;
+  const inner = body.slice(1, -1);
+  if (!inner.length) return [];
+  const commas = topLevel(inner, new Set([',']));
+  if (!commas) return null;
+  const elements = [];
+  for (const part of splitAt(inner, commas)) {
+    const polynomial = part.length ? polynomialOf(part) : null;
+    const constant = polynomial && constantOf(polynomial);
+    if (!constant) return null;
+    elements.push(constant);
+  }
+  return elements;
 }
 
 /**

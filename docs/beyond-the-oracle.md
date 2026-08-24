@@ -1,6 +1,6 @@
 # Beyond the oracle
 
-Status: phase 0 and Tier 1 implemented; phases 1-5 proposed
+Status: phase 0, Tier 1 and phase 2 implemented; phases 1 and 3-5 proposed
 
 This plan begins where `docs/proof-kernel.md` stops. That plan closes with a
 sentence — `engine.exact-evaluation` "never becomes verified" — and the
@@ -79,11 +79,12 @@ to the same thing; the even-power branch survived only because it never needs
 a cancellation. Re-boxing the body from its JSON puts the freed variables back
 in the sheet's own scope, and the fix is four lines in `lowerNode`.
 
-**`logic.exists-intro` has a checker and no prover.** `\exists x\in\mathbb{R},
-x^2=4` is still undecided, and naming the witness first does not help: `w:=2`
-proves `w^2=4` and the existential remains undecided, exactly as the kernel
-plan predicted. This is one rule away from working and it gates every
-constructed-witness argument in this document.
+**`logic.exists-intro` had a checker and no prover.** *(Fixed in phase 2.)*
+`\exists x\in\mathbb{R}, x^2=4` was undecided, and naming the witness first
+did not help: `w:=2` proved `w^2=4` and the existential stayed undecided,
+exactly as the kernel plan predicted. It was one rule away from working and it
+gated every constructed-witness argument in this document. `witness.js` is
+that rule; the row now reads **proved · verified** and cites `w`.
 
 ## The oracle is nine different things
 
@@ -489,11 +490,52 @@ sheet from a list of independently checked claims into a proof, and it is the
 only way an argument longer than one row fits inside the readability budget.
 Everything below sits behind it.
 
-### Phase 2: constructed witnesses
+### Phase 2: constructed witnesses — **implemented**
 
-Give `logic.exists-intro` a prover. The checker exists; the notation should
-follow the grain already there, naming the witness with `:=` and citing it, as
-the epsilon-delta demo does. This unlocks epsilon-N limits and Euclid.
+`logic.exists-intro` has a prover, in `src/lib/witness.js`. The search runs
+before the set lowering, because the lowering flattens an existential into a
+disjunction and a disjunction has forgotten which of its cases was the true
+one — which is why these rows were undecided however obvious their witness
+was.
+
+Three commitments shape it, and they are the same three that shape the kernel.
+
+**It only ever answers `true`.** A search that finds nothing has found
+nothing; the witness may be outside the candidates or outside anything this
+file could enumerate. Failure leaves the row undecided. Reporting `false`
+would claim a completeness the search does not have, and `\exists x\in
+\mathbb{R}, x^2=2` — true, with an irrational witness — is the standing
+reminder of why.
+
+**A candidate is accepted only when exact evaluation settles both
+obligations**: the body at the witness, and the witness's membership in the
+domain. Nothing heavier is allowed to run. That restraint is what lets the
+premises name `engine.exact-evaluation` and mean it.
+
+**The premise cites what actually settled it.** A prime witness carries its
+Pratt certificate rather than claiming Compute Engine evaluated `11 \in
+\mathbb{P}`, which is work Compute Engine cannot do.
+
+The reader's own names are tried first, so a sheet that says `w:=2` above
+`\exists x\in\mathbb{R}, x^2=4` cites `w`. That was the notation the plan
+asked for and it needed no new syntax at all.
+
+Three small kernel gaps surfaced while measuring, each of which had been
+making a fully checked row read worse than it was: membership of a literal in
+a standard domain or a finite set was not checked, a conjunction of ground
+relations was not read as ground arithmetic, and `mod` — which is how
+Compute Engine *prints* the remainder it already knew how to read as
+`\operatorname{mod}` — was not understood. With those closed, every
+existential the search reaches is `verified` or `certified` with nothing
+admitted.
+
+**What it does not reach.** A witness that depends on the quantified variable
+is a *function*, not a constant, so `orall x\in\mathbb{N}, \exists y\in
+\mathbb{N}, y>x` stays undecided — the epsilon-N idiom needs the witness to
+be `N(\epsilon)`, and supplying one is a separate piece of work from finding
+a number. The search reaches integers to twelve and a handful of small
+rationals, so `\exists p\in\mathbb{P}, p>100` is out of range while
+`p>10` is not. Euclid's construction needs the function form too.
 
 ### Phase 3: finish the kernel plan's phase 3
 

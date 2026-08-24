@@ -376,6 +376,12 @@ check('a sequent introduces arbitrary open-set assumptions locally', [
   '\\mathcal{O}(U,T)\\land\\mathcal{O}(V,T)'
     + '\\vdash\\mathcal{O}(U\\cap V,T)',
 ], proved);
+check('a named topology lemma re-enters the exact certificate dispatcher', [
+  'T:=\\mathsf{Disc}(\\mathbb{R})',
+  'L(U,V):=\\mathcal{O}(U,T)\\land\\mathcal{O}(V,T)'
+    + '\\vdash\\mathcal{O}(U\\cap V,T)',
+  'L(U,V)',
+], proved);
 check('cofinite open sets are recognized intensionally', [
   'T:=\\mathsf{Cof}(\\mathbb{R})',
   '\\mathcal{O}(\\mathbb{R}\\setminus\\{1,2\\},T)',

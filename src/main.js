@@ -4,7 +4,12 @@ import { MathfieldElement, convertLatexToMarkup } from 'mathlive';
 import './styles.css';
 
 import { Sheet } from './lib/engine.js';
-import { configureMathfield, setupVirtualKeyboard } from './lib/mathfield.js';
+import {
+  configureMathfield,
+  fillEmptyMatrixCells,
+  matrixResizeAllowed,
+  setupVirtualKeyboard,
+} from './lib/mathfield.js';
 import {
   flattenTopLevelChain,
   formatTopLevelChain,
@@ -12,6 +17,9 @@ import {
   isFormattedTopLevelChain,
 } from './lib/top-level.js';
 import { parseSheetStateHash, serializeSheetState } from './lib/url-state.js';
+import { DEFAULT_DEMO_ID, DEMOS, demoById } from './lib/demos.js';
+import { isSummarized, ruleLabel } from './lib/proof-trace.js';
+import { stepTrustLabel, trustSummary } from './lib/kernel.js';
 
 // Fonts arrive through `mathlive/static.css`, which Vite bundles; stop MathLive
 // from also fetching them (and its sounds) at runtime.
@@ -21,119 +29,6 @@ MathfieldElement.soundsDirectory = null;
 const STORAGE_PREFIX = 'sequent/v2';
 const LEGACY_STORAGE_PREFIX = 'expression-calculator/v2';
 
-const DEMO_ADDITIONS = [
-  'x+y=0\\iff x+y+z=0',
-  '(x+y-z)^2=0\\iff x+y-z=0',
-  'xy+z-2=0\\implies(xy+z-2)(x^2+y^2+1)=0',
-  'x^2+xy-z>2\\implies2(x^2+xy-z)>3',
-  'xy+yz+zx\\ge0\\iff(xy+yz+zx)^5\\ge0',
-  'x+y-z>0\\iff(x+y-z)(x^2+y^2+z^2+1)>0',
-];
-
-const topologyAxiomSteps = (topology, carrier) => [
-  `\\mathsf{Ax}_{\\varnothing}(${topology},${carrier})`
-    + `\\land\\mathsf{Ax}_{X}(${topology},${carrier})`,
-  `\\mathsf{Ax}_{\\bigcup}(${topology},${carrier})`
-    + `\\land\\mathsf{Ax}_{\\cap}(${topology},${carrier})`,
-];
-
-const DEMO_LINES = [
-  '\\frac{1}{3}+\\frac{1}{6}',
-  '\\sqrt{8}',
-  '\\operatorname{Re}(3+4i)',
-  '\\operatorname{Im}((1+i)^2)',
-  '\\text{gravity}=9.81',
-  'f(x)=x^2+1',
-  'f(3)=10',
-  'P(x):=x>0',
-  'P(3)\\land\\neg P(-1)',
-  'T:=2<3',
-  'T\\land P(1)',
-  'A:=\\{1,2,3\\}',
-  'A\\cup\\{3,4\\}',
-  '\\mathcal{P}(\\{1,2\\})',
-  '\\{1,2\\}\\in\\mathcal{P}(A)',
-  'X\\in\\mathcal{P}(A)\\iff X\\subseteq A',
-  '\\{1,2\\}\\times\\{3,4\\}',
-  '\\mathcal{P}(\\{1,2\\}\\times\\{3\\})',
-  '(2,4)\\in\\{1,2\\}\\times\\{3,4\\}',
-  '(x,y)\\in X\\times Y\\iff x\\in X\\land y\\in Y',
-  'X\\subseteq Y\\implies X\\times Z\\subseteq Y\\times Z',
-  '2\\in A\\land4\\notin A',
-  'S:=\\{x\\in\\mathbb{R}\\mid x^2<4\\}',
-  '1\\in S\\land3\\notin S',
-  'S=\\{x\\in\\mathbb{R}\\mid -2<x\\land x<2\\}',
-  '\\forall x\\in A,x^2\\ge1',
-  'X\\cup\\varnothing=X',
-  'X=Y\\iff X\\subseteq Y\\land Y\\subseteq X',
-  'X\\subseteq Y\\land Y\\subseteq Z\\implies X\\subseteq Z',
-  'G_4:=\\{0,1,2,3\\}',
-  'm(a,b):=\\operatorname{mod}(a+b,4)',
-  '\\mathsf{Clo}(G_4,m)\\land\\mathsf{Asc}(G_4,m)'
-    + '\\land\\mathsf{Idn}(G_4,m,0)\\land\\mathsf{Inv}(G_4,m,0)',
-  '\\mathsf{Grp}(G_4,m,0)\\land\\mathsf{Abl}(G_4,m)',
-  'H:=\\{0,2\\}',
-  '\\mathsf{Sbg}(H,G_4,m,0)',
-  '\\operatorname{mod}(\\operatorname{card}(G_4),\\operatorname{card}(H))=0',
-  '\\mathsf{Grp}\\vdash(xy)^{-1}=y^{-1}x^{-1}',
-  '\\mathsf{Grp}\\vdash xy=yx',
-  '\\mathsf{Abl}\\vdash xy=yx',
-  'P(n):=n^2\\ge n',
-  '\\mathsf{Base}(P,0)\\land\\mathsf{Step}(P,0)',
-  '\\mathsf{Induct}(P,0)',
-  'g(x):=2x+1',
-  'd(\\epsilon):=\\epsilon/2',
-  '\\operatorname{cont}(g,a,\\epsilon,d(\\epsilon))'
-    + '\\land\\operatorname{limitw}(g,a,2a+1,\\epsilon,d(\\epsilon))',
-  '1\\in\\operatorname{ball}(0,2)\\land3\\notin\\operatorname{ball}(0,2)'
-    + '\\land\\mathcal{O}_{\\mathbb{R}}(\\operatorname{ball}(a,r))',
-  'E:=\\{1,2\\}',
-  '\\tau:=\\{\\varnothing,\\{1\\},E\\}',
-  '\\mathsf{Top}(\\tau,E)'
-    + '\\land\\mathcal{O}(\\{1\\},\\tau)'
-    + '\\land\\mathcal{C}(\\{2\\},\\tau,E)',
-  'F(i):=\\{i,2\\}',
-  '\\mathop{\\bigcup}(F,\\{1,2\\})=\\{1,2\\}'
-    + '\\land\\mathop{\\bigcap}(F,\\{1,2\\})=\\{2\\}',
-  '\\tau_D:=\\mathsf{Disc}(\\mathbb{R})',
-  '\\mathsf{Ax}_{\\varnothing}(\\tau_D,\\mathbb{R})',
-  '\\mathsf{Ax}_{X}(\\tau_D,\\mathbb{R})',
-  '\\mathsf{Ax}_{\\bigcup}(\\tau_D,\\mathbb{R})',
-  '\\mathsf{Ax}_{\\cap}(\\tau_D,\\mathbb{R})',
-  '\\mathcal{O}(U,\\tau_D)\\land\\mathcal{O}(V,\\tau_D)'
-    + '\\vdash\\mathcal{O}(U\\cap V,\\tau_D)',
-  '\\mathsf{Top}(\\tau_D,\\mathbb{R})',
-  '\\tau_I:=\\mathsf{Ind}(\\mathbb{R})',
-  ...topologyAxiomSteps('\\tau_I', '\\mathbb{R}'),
-  '\\mathsf{Top}(\\tau_I,\\mathbb{R})',
-  '\\tau_C:=\\mathsf{Cof}(\\mathbb{R})',
-  ...topologyAxiomSteps('\\tau_C', '\\mathbb{R}'),
-  '\\mathsf{Top}(\\tau_C,\\mathbb{R})',
-  '\\tau_d:=\\mathsf{Met}(\\mathbb{R})',
-  '\\mathsf{Meet}(r,s,\\min(r,s))',
-  ...topologyAxiomSteps('\\tau_d', '\\mathbb{R}'),
-  '\\mathsf{Top}(\\tau_d,\\mathbb{R})',
-  'K:=\\operatorname{closedball}(0,1)',
-  '\\tau_S:=\\mathsf{Sub}(\\tau_d,\\mathbb{R},K)',
-  ...topologyAxiomSteps('\\tau_S', 'K'),
-  '\\mathsf{Top}(\\tau_S,K)',
-  '\\tau_P:=\\mathsf{Prod}(\\tau_d,\\mathbb{R},\\tau_d,\\mathbb{R})',
-  ...topologyAxiomSteps('\\tau_P', '\\mathbb{R}\\times\\mathbb{R}'),
-  '\\mathsf{Top}(\\tau_P,\\mathbb{R}\\times\\mathbb{R})',
-  '\\forall t\\in\\mathbb{R},\\operatorname{Re}(e^{it})='
-    + '\\frac{e^{it}+\\overline{e^{it}}}{2}='
-    + '\\frac{e^{it}+e^{\\overline{it}}}{2}='
-    + '\\frac{e^{it}+e^{-it}}{2}=\\cos(t)',
-  '(x+1)^2=x^2+2x+1=x^2+1+2x',
-  'x<x+1\\le x+2',
-  'x^2-1=0\\iff(x-1)(x+1)=0',
-  'x>3\\implies x>2\\implies x>1',
-  'x>0\\land x<2\\implies x^2<4',
-  ...DEMO_ADDITIONS,
-  '\\neg(x>0\\lor x<-1)\\iff x\\le0\\land x\\ge-1',
-  'x^2>0',
-  '',
-];
 
 const sheetEl = document.getElementById('sheet');
 const dockEl = document.getElementById('keyboard-dock');
@@ -141,6 +36,7 @@ const engine = new Sheet();
 
 const state = {
   page: 'sheet',
+  demoId: DEFAULT_DEMO_ID,
   lines: [''],
   display: 'exact',
   theme: 'light',
@@ -153,7 +49,12 @@ const rows = [];
 /* ------------------------------ persistence ------------------------------ */
 
 function pageFromHash() {
-  return location.hash.toLowerCase() === '#demo' ? 'demo' : 'sheet';
+  return /^#demo(?:=|$)/i.test(location.hash) ? 'demo' : 'sheet';
+}
+
+function demoIdFromHash() {
+  const requested = /^#demo=([a-z0-9-]+)$/i.exec(location.hash)?.[1];
+  return demoById(requested).id;
 }
 
 function storageKey(page) {
@@ -203,8 +104,10 @@ function load(page = pageFromHash()) {
   const urlState = page === 'sheet' ? parseSheetStateHash(location.hash) : null;
   const savedLines = urlState?.lines
     ?? (page !== 'demo' && Array.isArray(stored?.lines) && stored.lines.length ? stored.lines : null);
+  const selectedDemo = demoById(page === 'demo' ? demoIdFromHash() : DEFAULT_DEMO_ID);
   state.page = page;
-  state.lines = page === 'demo' ? [...DEMO_LINES] : (savedLines ?? ['']);
+  state.demoId = selectedDemo.id;
+  state.lines = page === 'demo' ? [...selectedDemo.lines] : (savedLines ?? ['']);
   state.display = urlState?.display ?? (stored?.display === 'decimal' ? 'decimal' : 'exact');
   state.theme = stored?.theme
     ?? (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
@@ -225,8 +128,8 @@ function save(options = {}) {
       theme: state.theme,
       keyboardCollapsed: state.keyboardCollapsed,
     };
-    // The demo is a stable showcase, not a second working document. Preserve
-    // its UI preferences, but rebuild its lines from DEMO_LINES on every load.
+    // Demos are curated showcases, not working documents. Preserve their UI
+    // preferences, but rebuild their lines from the selected demo on every load.
     if (state.page !== 'demo') saved.lines = state.lines;
     localStorage.setItem(storageKey(state.page), JSON.stringify(saved));
   } catch { /* private mode; the sheet just will not persist */ }
@@ -446,7 +349,112 @@ function verdictNoteHtml(result) {
   return `counterexample: ${parts.join(', ')}`;
 }
 
-function renderResult(el, result) {
+/** A proof is offered only where the prover actually built one. */
+function hasProof(result) {
+  return result?.kind === 'truth' && result.proofStatus === 'available' && Boolean(result.proof);
+}
+
+function primaryRule(proof) {
+  return ruleLabel(proof.steps.find((step) => step.id === proof.root)?.rule);
+}
+
+/** Concise facts from a step's `data`; the full record stays in the result. */
+function proofDetail(step) {
+  const data = step.data ?? {};
+  const bits = [];
+  if (data.variableLatex) bits.push(`in ${math(data.variableLatex)}`);
+  // A unit scale or a zero offset is what the rule already implies; only the
+  // number that did the work is worth the reader's attention.
+  if (data.scaleLatex && data.scaleLatex !== '1') bits.push(`by ${math(data.scaleLatex)}`);
+  if (data.offsetLatex && data.offsetLatex !== '0') bits.push(`offset ${math(data.offsetLatex)}`);
+  if (Number.isFinite(data.exponent)) bits.push(`power ${data.exponent}`);
+  if (Number.isFinite(data.carrier)) bits.push(`over ${data.carrier} elements`);
+  // The integer root test says which way it came out, since the rule alone
+  // does not: a radicand that is an exact power and one that is not are the
+  // same rule with opposite answers.
+  if (data.radicandLatex) {
+    const radical = data.indexLatex === '2'
+      ? `\\sqrt{${data.radicandLatex}}`
+      : `\\sqrt[${data.indexLatex}]{${data.radicandLatex}}`;
+    bits.push(data.rootLatex
+      ? `${math(radical)} = ${math(data.rootLatex)}`
+      : `${math(radical)} is not an integer`);
+  }
+  // Primality names the witness that settled it, since the rule covers both
+  // answers: a divisor ends the question, and a primitive root of full order
+  // is the whole content of a Pratt certificate.
+  if (data.factorLatex) bits.push(`divisible by ${math(data.factorLatex)}`);
+  if (Array.isArray(data.prattLatex) && data.prattLatex.length) {
+    const target = data.prattLatex.at(-1);
+    if (target?.rootLatex) {
+      const order = BigInt(target.numberLatex) - 1n;
+      bits.push(`${math(target.rootLatex)} has order ${math(String(order))}`);
+    }
+    if (data.prattLatex.length > 1) bits.push(`${data.prattLatex.length - 1} primes below it`);
+  }
+  if (isSummarized(step)) bits.push(`${data.omittedSteps} steps not shown`);
+  return bits.length ? ` <span class="proof-detail">(${bits.join('; ')})</span>` : '';
+}
+
+/**
+ * The trace, numbered in the order its steps were established.
+ *
+ * Steps arrive in dependency order, so the array index is a stable display
+ * number and a premise can be cited as the number the reader already saw.
+ */
+function proofPanelHtml(proof) {
+  const numberOf = new Map(proof.steps.map((step, index) => [step.id, index + 1]));
+  const items = proof.steps.map((step) => {
+    const from = step.premises.length
+      ? `<span class="proof-from">from ${step.premises.map((id) => numberOf.get(id)).join(', ')}</span>`
+      : '';
+    // Whether the kernel re-derived this step or merely believed it is the
+    // most important thing on the line, so it sits beside the rule that
+    // claimed it.
+    const trust = `<span class="proof-trust trust-${step.trust ?? 'axiom'}"`
+      + `${step.trustNote ? ` title="${escapeHtml(step.trustNote)}"` : ''}>`
+      + `${escapeHtml(stepTrustLabel(step))}</span>`;
+    return [
+      '<li class="proof-step">',
+      `<span class="proof-claim">${math(step.conclusionLatex)}</span>`,
+      `<span class="proof-rule">${escapeHtml(ruleLabel(step.rule))}${proofDetail(step)}</span>`,
+      trust,
+      from,
+      '</li>',
+    ].join('');
+  });
+  return `<ol class="proof-steps">${items.join('')}</ol>`;
+}
+
+function applyProofOpen(entry) {
+  const toggle = entry.result.querySelector('.proof-toggle');
+  const open = entry.proofOpen === true;
+  entry.proof.hidden = !open;
+  if (toggle) {
+    toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
+    toggle.querySelector('.proof-caret').textContent = open ? '▾' : '▸';
+  }
+}
+
+/**
+ * Fill the row's proof panel. Expanding only displays evidence the prover
+ * already returned — nothing here re-proves anything.
+ */
+function renderProof(entry, result) {
+  if (!hasProof(result)) {
+    entry.proofOpen = undefined;
+    entry.proof.hidden = true;
+    entry.proof.innerHTML = '';
+    return;
+  }
+  entry.proof.innerHTML = proofPanelHtml(result.proof);
+  // Demonstrations are guided proofs, so they open expanded. An ordinary
+  // sheet stays compact until the reader asks.
+  if (entry.proofOpen === undefined) entry.proofOpen = state.page === 'demo';
+  applyProofOpen(entry);
+}
+
+function renderResult(el, result, options = {}) {
   el.innerHTML = '';
   el.title = '';
 
@@ -493,11 +501,19 @@ function renderResult(el, result) {
       const note = describeVerdict(result);
       const pill = result.value === true ? 'pill-true' : result.value === false ? 'pill-false' : 'pill-unknown';
       const label = result.value === true ? 'true' : result.value === false ? 'false' : 'unknown';
-      el.innerHTML = [
-        `<span class="result-note">${verdictNoteHtml(result)}</span>`,
-        `<span class="pill ${pill}">${label}</span>`,
-      ].join('');
-      el.title = note;
+      // Where a derivation exists the verdict reports what the proof rests on
+      // — the weakest step in it — and becomes the control that reveals the
+      // steps. The rule that finished the proof moves to the tooltip: what a
+      // reader most needs to know at this width is how much was taken on
+      // trust, not which procedure happened to run.
+      const offerProof = options.allowProof && hasProof(result);
+      const summary = offerProof
+        ? `<button type="button" class="proof-toggle" aria-expanded="false">`
+          + `proved &middot; ${escapeHtml(trustSummary(result.proof))}`
+          + ` <span class="proof-caret" aria-hidden="true">&#9656;</span></button>`
+        : `<span class="result-note">${verdictNoteHtml(result)}</span>`;
+      el.innerHTML = [summary, `<span class="pill ${pill}">${label}</span>`].join('');
+      el.title = offerProof ? `${note} — ${primaryRule(result.proof)}` : note;
       return;
     }
 
@@ -506,7 +522,9 @@ function renderResult(el, result) {
       // Detail (arity, body) goes in the tooltip so narrow rows stay readable.
       const label = result.what === 'set'
         ? `${result.name} set defined`
-        : `${result.name} defined`;
+        : result.proposition
+          ? `${result.name} ${result.what === 'function' ? 'predicate' : 'proposition'} defined`
+          : `${result.name} defined`;
       el.innerHTML = `<span class="pill pill-definition">${escapeHtml(label)}</span>`;
       el.title = result.what === 'function'
         ? `${result.name}(${result.paramsLatex.join(', ')}) defined as ${result.valueLatex}`
@@ -539,6 +557,39 @@ function renderCheckpointResults(el, results, checkpointCount) {
 
 /* --------------------------------- rows ---------------------------------- */
 
+/**
+ * Offer the row and column keys only where they are safe.
+ *
+ * Resizing a grid that already holds entries throws them away, so the keys are
+ * greyed out unless the line's grids are still blank templates. The state
+ * lives on the dock, and the keycaps carry `matrix-resize`, so this is one
+ * class toggle rather than a rebuild of the keyboard.
+ */
+function syncMatrixResizeKeys(field) {
+  dockEl.classList.toggle('matrix-locked', !matrixResizeAllowed(field?.value ?? ''));
+}
+
+/** The field the reader is editing, so the keyboard can act on it. */
+let focusedField = null;
+
+/**
+ * `addColumnAfter` leaves its new cells empty rather than placeholders, so the
+ * column appears as a gap with nothing to click. Fill them in once MathLive
+ * has finished, and put the caret in the first one — which is where someone
+ * who just asked for a column wants to be typing.
+ */
+function repairResizedMatrix() {
+  const field = focusedField;
+  if (!field) return;
+  queueMicrotask(() => {
+    const filled = fillEmptyMatrixCells(field.value);
+    if (filled === field.value) return;
+    field.setValue(filled);
+    field.executeCommand('moveToNextPlaceholder');
+    syncMatrixResizeKeys(field);
+  });
+}
+
 function createRow(latex) {
   const row = document.createElement('div');
   row.className = 'row';
@@ -553,11 +604,24 @@ function createRow(latex) {
   const result = document.createElement('div');
   result.className = 'row-result';
 
-  row.append(gutter, field, result);
+  // Wraps onto its own line beneath the row, so a derivation can use the full
+  // width without narrowing the field being edited.
+  const proof = document.createElement('div');
+  proof.className = 'row-proof';
+  proof.hidden = true;
 
-  const entry = { row, field, result, gutter, visualChainLinks: 0 };
+  row.append(gutter, field, result, proof);
+
+  const entry = { row, field, result, gutter, proof, proofOpen: undefined, visualChainLinks: 0 };
+
+  result.addEventListener('click', (event) => {
+    if (!event.target.closest('.proof-toggle')) return;
+    entry.proofOpen = !entry.proofOpen;
+    applyProofOpen(entry);
+  });
 
   field.addEventListener('input', () => {
+    syncMatrixResizeKeys(field);
     const at = rows.indexOf(entry);
     if (at < 0) return;
     const raw = field.value;
@@ -582,6 +646,8 @@ function createRow(latex) {
 
   field.addEventListener('focusin', () => {
     row.classList.add('is-focused');
+    focusedField = field;
+    syncMatrixResizeKeys(field);
   });
   field.addEventListener('focusout', () => {
     row.classList.remove('is-focused');
@@ -709,9 +775,11 @@ function recompute() {
         }
       });
       renderCheckpointResults(entry.result, checkpointResults, chain.links);
+      renderProof(entry, null);
     } else {
       entry.result.classList.remove('is-chain');
-      renderResult(entry.result, result);
+      renderResult(entry.result, result, { allowProof: true });
+      renderProof(entry, result);
     }
   });
   save();
@@ -738,11 +806,42 @@ function renderKeyboardToggle(button) {
     : 'Show keyboard';
 }
 
+function renderDemoBrowser() {
+  const browser = document.getElementById('demo-browser');
+  const visible = state.page === 'demo';
+  browser.hidden = !visible;
+  if (!visible) return;
+
+  const active = demoById(state.demoId);
+  const position = DEMOS.findIndex((demo) => demo.id === active.id) + 1;
+  document.getElementById('demo-topic').textContent = active.topic;
+  document.getElementById('demo-count').textContent = `${position} of ${DEMOS.length}`;
+  document.getElementById('demo-title').textContent = active.title;
+  document.getElementById('demo-description').textContent = active.description;
+  const list = document.getElementById('demo-list');
+  list.innerHTML = DEMOS.map((demo) => {
+    const selected = demo.id === active.id;
+    return `<a class="demo-option${selected ? ' is-active' : ''}"`
+      + ` href="#demo=${demo.id}"${selected ? ' aria-current="true"' : ''}>`
+      + `<span class="demo-option-topic">${escapeHtml(demo.topic)}</span>`
+      + `<span class="demo-option-title">${escapeHtml(demo.title)}</span></a>`;
+  }).join('');
+  const selected = list.querySelector('.demo-option.is-active');
+  if (selected) {
+    list.scrollLeft = Math.max(
+      0,
+      selected.offsetLeft - list.offsetLeft - (list.clientWidth - selected.clientWidth) / 2,
+    );
+  }
+}
+
 function renderPageChrome() {
   const demo = state.page === 'demo';
+  const activeDemo = demoById(state.demoId);
   const sheetLink = document.getElementById('sheet-link');
   const demoLink = document.getElementById('demo-link');
   sheetLink.href = `${location.pathname}${location.search}`;
+  demoLink.href = `#demo=${demo ? activeDemo.id : DEFAULT_DEMO_ID}`;
   sheetLink.classList.toggle('is-active', !demo);
   demoLink.classList.toggle('is-active', demo);
   if (demo) {
@@ -752,7 +851,8 @@ function renderPageChrome() {
     sheetLink.setAttribute('aria-current', 'page');
     demoLink.removeAttribute('aria-current');
   }
-  document.title = demo ? 'Sequent — Demo' : 'Sequent';
+  document.title = demo ? `Sequent — ${activeDemo.title}` : 'Sequent';
+  renderDemoBrowser();
 }
 
 function setDisplay(mode, options = {}) {
@@ -800,12 +900,20 @@ function init() {
   const keyboardController = setupVirtualKeyboard(dockEl, {
     collapsed: state.keyboardCollapsed,
   });
+  // Nothing is focused yet, so there is no grid to resize.
+  syncMatrixResizeKeys(null);
+  // The keycaps run MathLive's own commands, so the repair has to happen after
+  // the press rather than instead of it.
+  dockEl.addEventListener('click', (event) => {
+    if (event.target.closest('.matrix-resize')) repairResizedMatrix();
+  });
   const keyboardToggle = document.getElementById('keyboard-toggle');
   renderKeyboardToggle(keyboardToggle);
 
   window.addEventListener('hashchange', () => {
     const nextPage = pageFromHash();
-    if (nextPage === state.page) return;
+    const nextDemoId = nextPage === 'demo' ? demoIdFromHash() : DEFAULT_DEMO_ID;
+    if (nextPage === state.page && (nextPage !== 'demo' || nextDemoId === state.demoId)) return;
 
     // The new hash may itself contain a shared sheet. Persist the old page
     // locally without replacing that incoming URL before it can be loaded.

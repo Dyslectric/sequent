@@ -1,23 +1,19 @@
-import { existsSync, readFileSync } from 'node:fs';
 import { defineConfig } from 'vite';
 import { VitePWA } from 'vite-plugin-pwa';
 
 /**
- * Serve over HTTPS once `npm run cert` has produced a certificate.
+ * The dev and preview servers are plain HTTP.
  *
- * This is not decoration: a service worker only registers on a secure origin,
- * so over a plain `http://192.168.x.x` the app is reachable from a phone but
- * cannot be installed. With the matching CA trusted on the device, it can.
+ * They used to serve HTTPS from a self-signed certificate, because a service
+ * worker only registers on a secure origin and the point was installing the
+ * sheet on a phone off the LAN. The app is served from a real origin now, so
+ * that is where the PWA gets tested, and the certificate was costing more than
+ * it bought: a browser that cannot click through a certificate warning — an
+ * automated one driving the page — was refused before reaching the app at all.
+ *
+ * `npm run cert` still exists and nothing reads what it produces. Delete both
+ * it and `certs/` if that stays true.
  */
-function localHttps() {
-  const key = new URL('./certs/server.key', import.meta.url);
-  const cert = new URL('./certs/server.crt', import.meta.url);
-  if (!existsSync(key) || !existsSync(cert)) return undefined;
-  return { key: readFileSync(key), cert: readFileSync(cert) };
-}
-
-const https = localHttps();
-
 export default defineConfig({
   // Relative base so a production build can be opened from any path.
   base: './',
@@ -25,8 +21,8 @@ export default defineConfig({
 
   // Bind every interface so the sheet is reachable from another device on the
   // network — a phone, in practice. Vite listens on localhost only by default.
-  server: { host: true, https },
-  preview: { host: true, port: 4173, https },
+  server: { host: true },
+  preview: { host: true, port: 4173 },
 
   plugins: [
     VitePWA({

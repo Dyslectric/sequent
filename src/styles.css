@@ -176,6 +176,113 @@ body {
   box-shadow: inset -5px 0 0 0 var(--surface);
 }
 
+/* ---------- proof demo browser ---------- */
+
+.demo-browser {
+  flex: none;
+  scrollbar-gutter: stable both-edges;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+}
+
+.demo-browser[hidden] { display: none; }
+
+.demo-browser-inner {
+  max-width: var(--content-width);
+  margin-inline: auto;
+  padding: 12px var(--row-gutter) 10px;
+}
+
+.demo-heading-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 18px;
+}
+
+.demo-topic,
+.demo-count {
+  color: var(--accent);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.demo-count {
+  color: var(--faint);
+  font-weight: 600;
+}
+
+.demo-title {
+  margin: 1px 0 0;
+  font-size: 18px;
+  line-height: 1.25;
+  letter-spacing: -0.015em;
+}
+
+.demo-description {
+  margin: 3px 0 10px;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.35;
+}
+
+.demo-list {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(142px, 1fr);
+  gap: 6px;
+  overflow-x: auto;
+  overscroll-behavior-inline: contain;
+  scrollbar-width: thin;
+  padding-bottom: 2px;
+}
+
+.demo-option {
+  appearance: none;
+  display: block;
+  min-width: 0;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+  color: var(--text);
+  padding: 7px 9px;
+  text-align: left;
+  cursor: pointer;
+  font: inherit;
+  text-decoration: none;
+}
+
+.demo-option:hover { background: var(--surface-hover); }
+
+.demo-option.is-active {
+  border-color: color-mix(in srgb, var(--accent) 55%, var(--border));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 25%, transparent);
+}
+
+.demo-option-topic,
+.demo-option-title {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.demo-option-topic {
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.demo-option-title {
+  margin-top: 1px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
 /* ---------- sheet ---------- */
 
 .sheet-scroll {
@@ -195,6 +302,10 @@ body {
    padding on the start edge of the scroller (the scrollbar itself covers the
    end edge) leaves both boxes the same width and origin as the header's. */
 .no-scrollbar-gutter .app-header {
+  padding-inline: var(--gutter-fallback);
+}
+
+.no-scrollbar-gutter .demo-browser {
   padding-inline: var(--gutter-fallback);
 }
 
@@ -246,6 +357,8 @@ body {
 
 .row {
   display: flex;
+  /* So an expanded proof panel can take a line of its own beneath the row. */
+  flex-wrap: wrap;
   align-items: stretch;
   gap: 10px;
   padding: 0 var(--row-gutter);
@@ -477,6 +590,15 @@ body {
   color: #fff;
 }
 
+/* Resizing a grid that already holds entries would throw them away, so the
+   row and column keys are inert unless the line's grids are still blank. They
+   stay visible — a key that vanishes is harder to find again than one that is
+   plainly unavailable. */
+.keyboard-dock.matrix-locked .matrix-resize {
+  opacity: 0.35;
+  pointer-events: none;
+}
+
 /* The stock Backspace key reserves opposite corners for Backspace and its
    shifted clear action. Our layers drive case through explicit layers rather
    than MathLive's shift state, so centre the primary glyph and give it the
@@ -510,5 +632,116 @@ body {
   .row-input { font-size: 17px; }
   .row-result { font-size: 15px; }
   .app-title { font-size: 13px; }
+  .demo-browser-inner { padding-top: 9px; }
+  .demo-title { font-size: 16px; }
+  .demo-description { margin-bottom: 8px; }
+  .demo-list { grid-auto-columns: minmax(128px, 1fr); }
   .hint { display: none; }
+}
+
+/* ------------------------------ proof traces ------------------------------ */
+
+/*
+ * The verdict doubles as the disclosure control when the prover returned a
+ * derivation. It looks like the note it replaces until it is worth noticing.
+ */
+.proof-toggle {
+  font: inherit;
+  font-size: 12px;
+  color: var(--muted);
+  background: none;
+  border: none;
+  border-radius: 4px;
+  padding: 2px 4px;
+  margin: -2px -4px;
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+
+.proof-toggle:hover { color: var(--text); background: var(--surface-hover); }
+.proof-toggle:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+  color: var(--text);
+}
+
+.proof-caret { color: var(--faint); }
+
+/* Wraps to its own line beneath the row, spanning the full width. */
+.row-proof {
+  flex-basis: 100%;
+  min-width: 0;
+  margin: 0 0 8px 36px;
+  padding: 8px 12px;
+  border-left: 2px solid var(--border);
+  background: var(--surface);
+  border-radius: 0 6px 6px 0;
+  overflow-x: auto;
+}
+
+.row-proof[hidden] { display: none; }
+
+.proof-steps {
+  margin: 0;
+  padding: 0 0 0 22px;
+  display: grid;
+  gap: 4px;
+  font-size: 14px;
+}
+
+.proof-step {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 10px;
+  color: var(--text);
+}
+
+.proof-step::marker { color: var(--faint); font-size: 12px; }
+
+.proof-claim { min-width: 0; }
+.proof-claim .math { --text-font-family: var(--serif); }
+
+.proof-rule {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.proof-detail { color: var(--faint); }
+
+/*
+ * What the kernel made of the step. A checked step is the quiet case and is
+ * styled as such; a step taken on trust is the one worth noticing, because it
+ * is the one a reader may want to prove for themselves.
+ */
+.proof-trust {
+  font-size: 11px;
+  letter-spacing: 0.02em;
+  padding: 1px 6px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.proof-trust.trust-verified { color: var(--accent); border-color: var(--accent); }
+.proof-trust.trust-oracle,
+.proof-trust.trust-rejected { color: var(--text); border-style: dashed; }
+
+.proof-from {
+  font-size: 12px;
+  color: var(--faint);
+  font-variant-numeric: tabular-nums;
+}
+
+@media (max-width: 640px) {
+  .row-proof {
+    margin-left: 0;
+    padding: 8px 10px;
+  }
+  /* The rule and its premises drop under the claim rather than beside it. */
+  .proof-step { gap: 2px 8px; }
 }

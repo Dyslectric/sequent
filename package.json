@@ -8,7 +8,7 @@
     "build": "vite build",
     "fuzz": "node scripts/fuzz.mjs",
     "preview": "vite preview",
-    "test": "node test/core.test.mjs && node test/multivariable-polynomial.test.mjs && node test/set-theory.test.mjs && node test/analysis-topology.test.mjs && node test/algebra.test.mjs",
+    "test": "node test/core.test.mjs && node test/proof-trace.test.mjs && node test/kernel.test.mjs && node test/demos.test.mjs && node test/multivariable-polynomial.test.mjs && node test/set-theory.test.mjs && node test/analysis-topology.test.mjs && node test/algebra.test.mjs && node test/linear-algebra.test.mjs",
     "tauri": "tauri",
     "desktop": "tauri dev",
     "desktop:build": "tauri build",

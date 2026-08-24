@@ -95,6 +95,30 @@ proved and checked by one divisor. A checker that factored would be a prover
 running on every keystroke, which is why this rule takes a witness where the
 rest of the arithmetic takes none.
 
+A sheet can also be asked to do without. `new Sheet({ permissions: {
+'polynomial.sturm-sign-chart': false } })` withholds an appeal, and every
+branch consults the set before it runs, so what cannot be proved from what is
+left comes back *undecided* — never false. The catalogue is
+`src/lib/permissions.js`: ten entries today, from Compute Engine's exact
+evaluation through the finite exhaustions to the numeric search itself, each
+listed only because some branch actually asks about it.
+
+What a withheld theorem reveals is often more interesting than the proof it
+costs, because the row that survives names the *second-choice* procedure.
+`x^2+x+1>0` rests on Sturm's theorem by default and on a negative discriminant
+without it; `x>2\implies x^2>3` falls back to the sign on the domain the
+antecedent confines `x` to; `\mathsf{Grp}(G,m,0)` says plainly that it is the
+finite exhaustion and not the CAS that settled it.
+
+Withholding is how the central invariant is tested — a theorem turned off may
+cost a proof but must never reverse one — and testing it that way immediately
+found a row that did reverse. `\frac{d}{dx}x^2=2x` came back **false**: with
+the CAS withheld the numeric sampler was what remained, and it substituted 3
+for the `x` that `\frac{d}{dx}` binds, asked Compute Engine to differentiate a
+constant with respect to 3, and reported `0\ne6` as a counterexample. The
+sampler now carries out every derivative, integral and limit before it
+substitutes anything, and declines the line entirely where it cannot.
+
 The sign charts, finite exhaustions, and remaining procedures are still
 admitted; turning each into a checkable witness is the plan in
 [A proof kernel for Sequent](docs/proof-kernel.md), continued in

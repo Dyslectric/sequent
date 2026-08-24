@@ -14,6 +14,7 @@ import {
   NO_PROOF, OPAQUE_PROOF, createTraceBuilder, provedBy, restoreIdentifiers, singleStep,
 } from './proof-trace.js';
 import { certify } from './kernel.js';
+import { createPermissions } from './permissions.js';
 import {
   ANALYSIS_PREDICATES,
   containsAnalysisConstruct,
@@ -1090,12 +1091,20 @@ function decimalLatex(numeric, digits) {
 export class Sheet {
   constructor(options = {}) {
     this.digits = options.digits ?? 12;
-    // Withholding Compute Engine's verdict is the one permission the sheet
-    // has today: everything it settles by authority alone becomes undecided,
-    // and everything the symbolic passes can prove stays proved. It is how the
-    // kernel's central invariant — that refusing a theorem may only ever move
-    // a verdict toward undecided — is put under test.
-    this.allowDirectEvaluation = options.allowDirectEvaluation !== false;
+    // What this sheet is allowed to appeal to. Every branch consults it before
+    // it runs, and a branch that may not run reports nothing — which is how
+    // the kernel's central invariant, that refusing a theorem may only ever
+    // move a verdict toward undecided, is put under test.
+    //
+    // `allowDirectEvaluation` was the whole permission system until now and
+    // stays as the shorthand for its one entry, so callers that only ever
+    // wanted the CAS withheld need not learn a new spelling.
+    this.permissions = createPermissions({
+      ...(options.permissions ?? {}),
+      ...(options.allowDirectEvaluation === false
+        ? { 'engine.exact-evaluation': false }
+        : {}),
+    });
     this.reset();
   }
 
@@ -1837,7 +1846,7 @@ export class Sheet {
    * preserving, and `\mathbb{N}` has to sit inside the codomain.
    */
   closureOf(binding, codomain, closed, conclusionLatex) {
-    if (!closed) return null;
+    if (!closed || !this.permissions.allows('set.domain-closure')) return null;
     const from = binding.ops?.[1]?.symbol;
     const into = codomain?.symbol;
     if (!from || !into || !numericDomainContains(into, from)) return null;
@@ -2000,6 +2009,21 @@ export class Sheet {
     let analysisCertificate = null;
     let analysisRewrite = null;
 
+    // A withheld appeal stops the pass that would have made it, and the line
+    // is left undecided rather than lowered into a shape some permitted rule
+    // could finish. Nothing here reports `false`: a statement this sheet is
+    // not allowed to settle is one it does not know about.
+    for (const rule of analysisAppeals(decidedExpr)) {
+      if (!this.permissions.allows(rule)) {
+        return this.truthOfVerdict(
+          { value: null, method: 'undecided', samples: 0, counterexample: null, ...NO_PROOF },
+          decidedExpr,
+          boundSymbols,
+          used,
+        );
+      }
+    }
+
     if (containsAnalysisConstruct(decidedExpr)) {
       analysis = lowerAnalysisProposition(
         this.ce,
@@ -2059,12 +2083,17 @@ export class Sheet {
     // A witness that varies with the variable it is quantified under comes
     // first, because the constant search below cannot see it: no number
     // witnesses `\exists y, y>x` for every `x`.
-    const varying = proofBase && this.functionWitness(decidedExpr, used, latexOf);
+    // Both searches accept a candidate only where exact evaluation settles
+    // its two obligations, so withholding the CAS withholds the search: what
+    // is refused is the means of *finding* the witness, and there is no other.
+    const searchWitness = this.permissions.allows('engine.exact-evaluation');
+    const varying = searchWitness && proofBase && this.functionWitness(decidedExpr, used, latexOf);
     if (varying) {
       verdict = decideStatement(this.ce, this.ce.box('True'), {
         complex,
         allowSampling: false,
         domains,
+        permissions: this.permissions,
         allowDirectEvaluation: true,
         realSymbols: new Set(analysis?.realSymbols ?? []),
         proofContext: this.setProofContext(proofBase, source, latexOf, {
@@ -2084,13 +2113,15 @@ export class Sheet {
       return this.truthOfVerdict(verdict, decidedExpr, boundSymbols, used);
     }
 
-    const witness = existentialWitness(this.ce, decidedExpr, this.definitions);
+    const witness = searchWitness
+      && existentialWitness(this.ce, decidedExpr, this.definitions);
     if (witness) {
       const witnessLatex = latexOf(witness.witnessExpr);
       verdict = decideStatement(this.ce, this.ce.box('True'), {
         complex,
         allowSampling: false,
         domains,
+        permissions: this.permissions,
         allowDirectEvaluation: true,
         realSymbols: new Set(analysis?.realSymbols ?? []),
         proofContext: this.setProofContext(proofBase, source, latexOf, {
@@ -2158,8 +2189,8 @@ export class Sheet {
         domains,
         // Nor may an opaque set/domain atom be accepted from Compute Engine's
         // eager evaluation; the symbolic tautology prover still runs below it.
-        allowDirectEvaluation: this.allowDirectEvaluation
-          && !analysis?.unsafeEvaluation
+        permissions: this.permissions,
+        allowDirectEvaluation: !analysis?.unsafeEvaluation
           && !analysis?.unresolvedAnalysis
           && !lowered.unsafeEvaluation && !lowered.unresolvedSets,
         realSymbols,
@@ -2173,8 +2204,8 @@ export class Sheet {
       verdict = decideStatement(this.ce, decidedExpr, {
         complex,
         allowSampling: !analysis && !refuseSampling,
-        allowDirectEvaluation: this.allowDirectEvaluation
-          && !analysis?.unsafeEvaluation && !analysis?.unresolvedAnalysis,
+        permissions: this.permissions,
+        allowDirectEvaluation: !analysis?.unsafeEvaluation && !analysis?.unresolvedAnalysis,
         realSymbols: analysis?.realSymbols,
         domains,
         proofContext: analysis
@@ -2291,6 +2322,30 @@ const ANALYSIS_REWRITES = new Map([
   ['ContinuousAt', 'analysis.epsilon-delta-witness'],
   ['LimitAt', 'analysis.epsilon-delta-witness'],
 ]);
+
+/**
+ * Every appeal the analysis pass would make about this statement.
+ *
+ * The lowering *is* the appeal here: `cont(...)` becoming obligations is the
+ * epsilon-delta definition, `Induct` becoming base and step is the induction
+ * principle, and a finite carrier being walked is the exhaustion. So a
+ * withheld rule has to be spotted before the pass runs, and it is collected
+ * over the whole expression rather than off the outermost operator, because a
+ * predicate under an implication is still a predicate that will be lowered.
+ *
+ * `definition.unfold` is deliberately not collected: an unfolding is the
+ * reader's own stipulation and there is nothing there to withhold.
+ */
+function analysisAppeals(expr, found = new Set()) {
+  if (!expr) return found;
+  const operator = expr.operator;
+  if (ALGEBRA_PREDICATES.has(operator)) found.add('algebra.finite-exhaustion');
+  for (const rule of [ANALYSIS_CERTIFICATES.get(operator), ANALYSIS_REWRITES.get(operator)]) {
+    if (rule && rule !== 'definition.unfold') found.add(rule);
+  }
+  for (const operand of expr.ops ?? []) analysisAppeals(operand, found);
+  return found;
+}
 
 /** Structural identity, used to confirm a lowering pass changed nothing else. */
 function sameExpression(a, b) {

@@ -514,11 +514,73 @@ and the summary says which. `\mathsf{Grp}(G,m,0)` now reads *resting on 1
 unchecked step* rather than *resting on 1 theorem*, and
 `orall x\in\mathbb{R},x^2\ge0` names Sturm.
 
-**Still to do:** the permission set (generalising `allowSampling` /
-`allowDirectEvaluation` into a set of theorem ids each branch consults), the
-sidebar that lists them with toggles, and "prove that one too". Those are one
-piece of UI work resting on the classification above, which is why the
-classification came first.
+**The permission set exists, and every branch consults it.**
+`src/lib/permissions.js` is the catalogue — ten appeals, from
+`engine.exact-evaluation` through the finite exhaustions to the numeric search
+— and a sheet takes `{ permissions: { <id>: false } }`. The two booleans that
+came before it are entries in it now; `allowDirectEvaluation: false` is kept as
+the shorthand for withholding the oracle and nothing else.
+
+Three things shape it, and each of them is a test.
+
+*An appeal is listed only where a branch actually consults it.* A toggle that
+changes no verdict is a more comfortable lie than the one it replaces, so
+every entry has a probe naming the line it is responsible for.
+`set.extensionality` and `set.finite-enumeration` are registered rules that no
+prover currently emits and are therefore absent, and so is
+`calculus.continuity`, which is an obligation the engine discharges before the
+decision rather than a branch it chooses.
+
+*The set reaches the provers, not just the rules they conclude with.* This is
+the difference between a permission and a filter, and it shows up immediately:
+Sturm's theorem is complete for the univariate fragment and reaches almost
+everything first, so filtering its conclusions would leave the reader with
+nothing but sampled rows. Asked *before* the procedure runs, the second-choice
+route answers instead — `x^2+x+1>0` by its negative discriminant,
+`x>2\implies x^2>3` by the sign on the antecedent's domain, `x^2<0\implies x=5`
+vacuously. Six lines that fell to sampling now name a different theorem, and
+that is the sidebar's whole argument in miniature: withholding a theorem is a
+way of asking what else would have done.
+
+*Reading an answer back is not appealing to the CAS.* Where an earlier pass
+settled the line, pass 1a's re-evaluation cites that pass, so the permission
+governing it is that pass's own. Fifteen rows used to disappear when the oracle
+was withheld — the finite groups, the vector space, the topology axioms — and
+they now stay, resting on the exhaustion or the topology certificate that
+really decided them, and disappearing when *those* are withheld instead.
+
+**The oracle table in `docs/proof-kernel.md` does not survive being measured
+again.** It says `2+2=4`, `e^{i\pi}=-1` and the Basel sum read *undecided* with
+the oracle disabled. They read **proved**, with no trace at all, and did so
+before any of this: the numeric pass evaluates a closed statement in floating
+point and reports the answer, so withholding the CAS's exact verdict leaves its
+approximate one. Withholding `search.numeric-sampling` as well is what makes
+those rows undecided, which is the coherent thing for the sidebar to say —
+`\pi>3` is not proved by evaluating `\pi` to fifteen digits, and the row that
+claims otherwise rests on the numeric search, not on the oracle.
+
+**A verdict did reverse, and the permission set is what found it.**
+`\frac{d}{dx}x^2=2x` came back **false** with the oracle withheld. The sampler
+was what remained, and it substituted 3 for the `x` that `\frac{d}{dx}` binds,
+asked Compute Engine to differentiate a constant with respect to 3, and
+reported `0\ne6` as a counterexample. This was reachable at every commit since
+derivatives were added and no gate could see it, because with the CAS
+permitted the line never reaches the sampler at all.
+
+The fix is the same answer `hasOpenSummation` already gives to the same
+mistake: a bound variable is not a place to put a number. `samplingSubject` in
+`decide.js` carries out every `D`, `Integrate` and `Limit` first, innermost
+outward, and refuses to sample a statement that still binds a variable
+afterwards. `\frac{d}{dx}x^2=3x` still gets its counterexample, from the
+differentiated form.
+
+The monotonicity test now withholds every appeal in turn against the whole demo
+catalogue *and* a sweep of twenty lines outside it, which is where the
+derivative had to be caught.
+
+**Still to do:** the sidebar that lists the appeals with toggles, and "prove
+that one too". Both are UI work resting on the catalogue and the
+classification, which is why those came first.
 
 ### The original plan
 

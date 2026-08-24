@@ -1,6 +1,6 @@
 # A proof kernel for Sequent
 
-Status: phases 1 and 2 implemented; phase 3 started; phases 4-5 proposed
+Status: phases 1 and 2 implemented; phases 3 and 4 started; phase 5 proposed
 
 Phase 1 landed in `src/lib/kernel.js`, checked by `test/kernel.test.mjs`. Every
 step of every trace carries a trust level, the row reports the weakest one, and
@@ -81,6 +81,13 @@ cleanly:
 
 Everything in the lower half is an appeal to authority. The last row is the
 instructive one: the sheet has no arithmetic of its own at that level.
+
+*The right-hand column was re-measured and is wrong.* Those rows read
+**proved**, from a floating-point evaluation, because withholding the CAS's
+exact verdict leaves the numeric pass holding its approximate one. See
+`docs/beyond-the-oracle.md` phase 1: it takes withholding the numeric search as
+well, which the permission set can now express and these two booleans could
+not.
 
 **2. Decision procedures embed theorems.** `polynomial.sturm-sign-chart` *is*
 Sturm's theorem, and the finite exhaustions rely on their corresponding
@@ -347,9 +354,12 @@ the phase with the most mathematics in it.
 1. Enrich the registry: each rule names the theorem it appeals to, with a
    statement and a dependency list. Sturm's theorem becomes a first-class
    object, not a string in a label.
-2. Generalise the existing `allowSampling` / `allowDirectEvaluation` options
+2. ~~Generalise the existing `allowSampling` / `allowDirectEvaluation` options
    into a permission set of theorem ids, consulted by each branch before it
-   runs.
+   runs.~~ Done: `src/lib/permissions.js`, ten appeals, consulted by the
+   provers themselves rather than filtering the rules they conclude with. See
+   `docs/beyond-the-oracle.md` phase 1, including the true verdict it found
+   turning false.
 3. Build the sidebar: every theorem the sheet knows, its trust level, and a
    toggle. Turning one off re-runs the sheet under the smaller set.
 4. **"Prove that one too"** — the feature this is all for. Selecting an

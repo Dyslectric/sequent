@@ -41,7 +41,8 @@ import {
   subtractPolynomials,
   variablePolynomial,
 } from '../src/lib/kernel-polynomial.js';
-import { PROOF_VERSION, isValidTrace } from '../src/lib/proof-trace.js';
+import { PROOF_VERSION, isRule, isValidTrace } from '../src/lib/proof-trace.js';
+import { APPEAL_LIST, SAMPLING, createPermissions } from '../src/lib/permissions.js';
 import { Sheet } from '../src/lib/engine.js';
 import { DEMOS } from '../src/lib/demos.js';
 
@@ -1458,29 +1459,142 @@ check('corrupting a premise withdraws the verification of what rests on it', () 
   return mutated >= 5 ? null : `only ${mutated} mutations were possible`;
 });
 
-console.log('== monotonicity ==');
+console.log('== the permission set ==');
 
 /**
- * Withholding the CAS oracle may only ever move a verdict toward undecided.
+ * Lines outside the demo catalogue, chosen to exercise every appeal at least
+ * once. The catalogue alone was not enough: the derivative row below came back
+ * **false** with the CAS withheld — the sampler substituted a number for the
+ * variable `\frac{d}{dx}` binds — and nothing in the demos could have caught
+ * it, because with the CAS permitted the line never reaches the sampler.
+ */
+const WITHHOLDING_SWEEP = [
+  ['\\frac{d}{dx}x^2=2x'],
+  ['\\frac{d}{dx}x^2=3x'],
+  ['\\frac{\\partial}{\\partial x}(xy)=y'],
+  ['\\int_0^1x^2dx=\\frac{1}{3}'],
+  ['2+2=4'],
+  ['\\pi>3'],
+  ['e^{i\\pi}=-1'],
+  ['x^2+x+1>0'],
+  ['x^4+3x^2+1>0'],
+  ['x>2\\implies x^2>3'],
+  ['x^2<0\\implies x=5'],
+  ['\\forall x\\in\\mathbb{R},x^2\\ge0'],
+  ['\\forall x\\in\\mathbb{N},\\exists y\\in\\mathbb{N}, y>x'],
+  ['\\exists x\\in\\mathbb{R}, x^2=4'],
+  ['\\sqrt{2}\\notin\\mathbb{Q}'],
+  ['7\\in\\mathbb{P}'],
+  ['\\sum_{n=1}^{10}n=55'],
+  ['\\sin(x)+\\cos(x)\\le 2'],
+  ['w:=2', '\\exists x\\in\\mathbb{R}, x^2=4'],
+  ['f(x):=x^2', '\\forall x\\in\\mathbb{R}, f(x)\\ge0'],
+];
+
+const SHEETS = [
+  ...DEMOS.map((demo) => ({ id: demo.id, lines: demo.lines })),
+  ...WITHHOLDING_SWEEP.map((lines, index) => ({ id: `sweep-${index}`, lines })),
+];
+
+const FULL_VERDICTS = SHEETS.map((sheet) => new Sheet().evaluateAll(sheet.lines));
+
+/**
+ * Withholding an appeal may only ever move a verdict toward undecided.
  *
  * This is the invariant the whole plan rests on: a theorem turned off may cost
- * a proof, never reverse one. `allowDirectEvaluation` is the one permission
- * that exists today, so it is the one that can be tested.
+ * a proof, never reverse one. Every entry in the catalogue is withheld in
+ * turn, against every demo and every line of the sweep above.
  */
-check('refusing the oracle never turns a verdict around', () => {
-  for (const demo of DEMOS) {
-    const full = new Sheet().evaluateAll(demo.lines);
-    const restricted = new Sheet({ allowDirectEvaluation: false }).evaluateAll(demo.lines);
-    for (let index = 0; index < full.length; index += 1) {
-      const before = full[index]?.value;
-      const after = restricted[index]?.value;
-      if (before === undefined || after === undefined) continue;
-      if (after !== null && after !== before) {
-        return `${demo.id}:${demo.lines[index]} went from ${before} to ${after}`;
+check('withholding an appeal never turns a verdict around', () => {
+  for (const { id } of APPEAL_LIST) {
+    for (let s = 0; s < SHEETS.length; s += 1) {
+      const sheet = SHEETS[s];
+      const restricted = new Sheet({ permissions: { [id]: false } }).evaluateAll(sheet.lines);
+      for (let index = 0; index < restricted.length; index += 1) {
+        const before = FULL_VERDICTS[s][index]?.value;
+        const after = restricted[index]?.value;
+        if (before === undefined || after === undefined) continue;
+        if (after !== null && after !== before) {
+          return `without ${id}, ${sheet.id}:${sheet.lines[index]} went from ${before} to ${after}`;
+        }
       }
     }
   }
   return null;
+});
+
+/**
+ * One line per appeal, which that appeal is responsible for.
+ *
+ * A toggle that changes nothing is a more comfortable lie than the one it
+ * replaces, so every entry in the catalogue has to cost something. Two of them
+ * need a `baseline`: Sturm's theorem is a complete decision procedure for the
+ * univariate fragment and reaches these lines first, so the discriminant and
+ * the domain sign are only *asked* once it is out of the way — which is also
+ * the evidence that the permission set reaches the provers rather than merely
+ * filtering the rules they conclude with.
+ */
+const APPEAL_PROBES = [
+  { id: 'engine.exact-evaluation', lines: ['\\exists x\\in\\mathbb{R}, x^2=4'] },
+  // Positive on the whole line and no sum of squares in sight, so nothing
+  // below the sign chart reaches it.
+  { id: 'polynomial.sturm-sign-chart', lines: ['x^4-x^3+x^2-x+1>0'] },
+  {
+    id: 'polynomial.discriminant',
+    lines: ['x^2+x+1>0'],
+    baseline: { 'polynomial.sturm-sign-chart': false },
+  },
+  {
+    id: 'polynomial.domain-sign',
+    lines: ['x>2\\implies x^2>3'],
+    baseline: { 'polynomial.sturm-sign-chart': false },
+  },
+  { id: 'set.domain-closure', lines: ['\\forall x\\in\\mathbb{N},\\exists y\\in\\mathbb{N}, y>x'] },
+  { id: 'algebra.finite-exhaustion', demo: 'finite-group' },
+  { id: 'topology.constructor-certificate', demo: 'topology-axioms' },
+  { id: 'analysis.epsilon-delta-witness', demo: 'epsilon-delta' },
+  { id: 'analysis.induction', demo: 'induction' },
+  { id: SAMPLING, lines: ['\\sin(x)+\\cos(x)\\le 2'] },
+];
+
+check('every appeal in the catalogue actually withholds something', () => {
+  const uncovered = APPEAL_LIST
+    .filter(({ id }) => !APPEAL_PROBES.some((probe) => probe.id === id))
+    .map(({ id }) => id);
+  if (uncovered.length) return `no probe for ${uncovered.join(', ')}`;
+
+  for (const probe of APPEAL_PROBES) {
+    const lines = probe.lines ?? DEMOS.find((demo) => demo.id === probe.demo)?.lines;
+    if (!lines) return `${probe.id} names a demo that is gone: ${probe.demo}`;
+    const baseline = new Sheet({ permissions: probe.baseline ?? {} }).evaluateAll(lines);
+    const withheld = new Sheet({ permissions: { ...probe.baseline, [probe.id]: false } })
+      .evaluateAll(lines);
+    const bites = baseline.some((row, index) => {
+      const after = withheld[index];
+      if (row?.kind !== 'truth' || row.value === null) return false;
+      return after?.value === null || (row.method === 'proved' && after?.method !== 'proved');
+    });
+    if (!bites) return `withholding ${probe.id} changed nothing on ${lines.at(-1)}`;
+  }
+  return null;
+});
+
+check('the old spelling still withholds the oracle', () => {
+  const sheet = new Sheet({ allowDirectEvaluation: false });
+  return sheet.permissions.allows('engine.exact-evaluation')
+    ? 'allowDirectEvaluation: false left the oracle permitted'
+    : null;
+});
+
+check('an unlisted rule is permitted', () => (
+  createPermissions({ 'polynomial.sturm-sign-chart': false }).allows('logic.and-intro')
+    ? null : 'withholding one appeal withheld an inference'));
+
+check('the catalogue names only registered rules', () => {
+  const unregistered = APPEAL_LIST
+    .filter(({ id }) => id !== SAMPLING && !isRule(id))
+    .map(({ id }) => id);
+  return unregistered.length ? `not in the registry: ${unregistered.join(', ')}` : null;
 });
 
 if (failures.length) {

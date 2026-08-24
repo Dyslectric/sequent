@@ -23,6 +23,7 @@
 import { polynomialCoefficients, proveImplicationBySign, proveRelationBySign } from './polynomial.js';
 import { decideRationalPolynomialFormula, rationalLatex } from './rational-polynomial.js';
 import { proveComplexStatement } from './complex-proof.js';
+import { SAMPLING, createPermissions } from './permissions.js';
 import {
   NO_PROOF, OPAQUE_PROOF, createTraceBuilder, provedBy,
 } from './proof-trace.js';
@@ -635,14 +636,18 @@ function proveImplies(ce, left, right, scope, top = null) {
   }
 
   // Trivially true when the consequent holds for every value anyway...
-  const always = proveRelationBySign(ce, b);
+  const always = proveRelationBySign(ce, b, scope.permits);
   if (always) {
     const consequent = concluding(scope, right, null)(always.rule, [], always.data);
     return conclude('logic.implies-intro', [consequent]);
   }
-  // ...and vacuously true when the antecedent can never hold at all.
+  // ...and vacuously true when the antecedent can never hold at all. Both
+  // routes name a logical rule and lean on a sign certificate underneath it,
+  // which is why the permission set goes to the prover rather than being
+  // consulted about the rule this branch concludes with: withholding Sturm's
+  // theorem must not leave it reachable through `logic.vacuous`.
   const impossible = negateRelation(ce, a);
-  if (impossible && proveRelationBySign(ce, impossible)) {
+  if (impossible && proveRelationBySign(ce, impossible, scope.permits)) {
     return conclude('logic.vacuous');
   }
 
@@ -682,7 +687,7 @@ function proveImplies(ce, left, right, scope, top = null) {
 
   // Nonlinear, one variable: turn the antecedent into a domain and certify the
   // consequent's sign on it. This is what reaches `x > 2 => x^2 > 3`.
-  const onDomain = proveImplicationBySign(ce, a, b);
+  const onDomain = proveImplicationBySign(ce, a, b, scope.permits);
   if (onDomain) return conclude(onDomain.rule, [], onDomain.data);
 
   return null;
@@ -815,7 +820,11 @@ function proveSymbolically(ce, expr, scope, top = null) {
   if (variables.length === 1) {
     const formula = polynomialFormula(ce, expr, variables[0]);
     if (formula && decideRationalPolynomialFormula(formula)?.value === true) {
-      return conclude('polynomial.sturm-sign-chart', [], { variableLatex: variables[0] });
+      // Where the sign chart is withheld the shared certificate is gone, but
+      // the connectives below may still decompose the statement into parts
+      // that some other rule reaches, so this declines rather than returning.
+      const chart = conclude('polynomial.sturm-sign-chart', [], { variableLatex: variables[0] });
+      if (chart !== null) return chart;
     }
   }
 
@@ -904,7 +913,7 @@ function proveSymbolically(ce, expr, scope, top = null) {
   if (RELATIONS.has(op)) {
     const relation = normalizeRelation(ce, expr);
     if (!relation) return null;
-    const certificate = proveRelationBySign(ce, relation);
+    const certificate = proveRelationBySign(ce, relation, scope.permits);
     return certificate ? conclude(certificate.rule, [], certificate.data) : null;
   }
   return null;
@@ -913,6 +922,57 @@ function proveSymbolically(ce, expr, scope, top = null) {
 const MAX_SAMPLES = 320;
 const MIN_DECISIVE = 8;
 const TIME_BUDGET_MS = 250;
+
+/** Heads whose second or third operand is a variable they bind, not a value. */
+const BINDING_HEADS = new Set(['D', 'ND', 'Integrate', 'Limit']);
+
+const bindsAVariable = (json) => /\["(?:D|ND|Integrate|Limit)",/.test(JSON.stringify(json));
+
+/**
+ * The statement as the sampler is allowed to see it.
+ *
+ * A bound variable is not a place to put a number. `x` occurs on both sides of
+ * `\frac{d}{dx}x^2 = 2x`, and the sampler substituted 3 for both, asked
+ * Compute Engine to differentiate a constant with respect to 3, and reported
+ * `0 \ne 6` as a counterexample — so the row came back **false**, which is the
+ * one thing withholding a theorem may never do. It took withholding the CAS to
+ * see it, because otherwise pass 1a settles the line long before the sampler
+ * runs.
+ *
+ * So every binding operator is carried out first, innermost outward, and what
+ * is substituted into is the derivative rather than the expression asking for
+ * one. A statement that still binds a variable afterwards — `\lim` at a
+ * symbolic point, an integral Compute Engine will not do — is not sampled at
+ * all, on the same reasoning `hasOpenSummation` refuses a symbolic bound.
+ */
+function samplingSubject(ce, expr) {
+  let json;
+  try {
+    json = expr.json;
+  } catch {
+    return null;
+  }
+  if (!bindsAVariable(json)) return expr;
+
+  const resolve = (node) => {
+    if (!Array.isArray(node)) return node;
+    const rebuilt = node.map((part, index) => (index === 0 ? part : resolve(part)));
+    if (!BINDING_HEADS.has(node[0])) return rebuilt;
+    try {
+      return ce.box(rebuilt).evaluate().json;
+    } catch {
+      return rebuilt;
+    }
+  };
+
+  try {
+    const resolved = resolve(json);
+    if (bindsAVariable(resolved)) return null;
+    return ce.box(resolved);
+  } catch {
+    return null;
+  }
+}
 
 /**
  * Sampling cannot establish an equivalence between equations over different
@@ -948,10 +1008,15 @@ const OPAQUE_STEP = Symbol('opaque step');
  * the displayed form — after domain lowering, for one — and the trace is then
  * built but discarded rather than describing a statement nobody wrote.
  */
-function createScope(context) {
+function createScope(context, permissions) {
   const builder = createTraceBuilder();
   const scope = {
     builder,
+    // Every prover already receives the scope, which makes it the natural
+    // place for the permission set: a certificate a branch may not cite is a
+    // certificate it may not use, and the two questions are asked of one
+    // object rather than threaded separately through a dozen signatures.
+    permits: (rule) => permissions.allows(rule),
     enabled: Boolean(context?.statementLatex),
     statementLatex: context?.statementLatex ?? '',
     wrap: context?.wrap ?? null,
@@ -1017,6 +1082,11 @@ function createScope(context) {
  * attach, since that is the claim resting on them.
  */
 const concluding = (scope, expr, top) => (rule, premises = [], data = null) => {
+  // A withheld rule fails the branch that wanted it rather than the trace it
+  // would have written, so this is checked before anything else and even when
+  // no trace is being built at all. Null is how every prover here says "not
+  // this way", and the decision falls through to whatever else can settle it.
+  if (!scope.permits(rule)) return null;
   // Nothing is rendered for a discarded trace, so a failed branch never pays
   // to serialize a conclusion it will not show.
   if (!scope.enabled) return OPAQUE_STEP;
@@ -1053,11 +1123,21 @@ function sealed(scope, root) {
  */
 export function decideStatement(ce, expr, options = {}) {
   const complex = options.complex ?? false;
-  const allowSampling = options.allowSampling !== false;
-  const allowDirectEvaluation = options.allowDirectEvaluation !== false;
+  const permissions = createPermissions(options.permissions ?? null);
   const realSymbols = new Set(options.realSymbols ?? []);
   const domains = options.domains instanceof Map ? options.domains : new Map();
-  const scope = createScope(options.proofContext ?? null);
+  const scope = createScope(options.proofContext ?? null, permissions);
+  // The two option flags are soundness conditions rather than permissions —
+  // an unresolved set variable must never receive a test value, whatever the
+  // reader has allowed — so a branch runs only when both agree.
+  const allowSampling = options.allowSampling !== false && permissions.allows(SAMPLING);
+  // Where an earlier pass already settled the line, this evaluation is reading
+  // its answer back rather than appealing to the CAS, so the permission that
+  // governs it is the one that pass appealed to. Withholding the finite
+  // exhaustion stops the group rows here, and withholding the oracle does not.
+  const readBackRule = scope.decidedBy?.rule ?? 'engine.exact-evaluation';
+  const allowDirectEvaluation = options.allowDirectEvaluation !== false
+    && permissions.allows(readBackRule);
 
   // 1a. Outright proof by the CAS.
   let evaluated;
@@ -1093,7 +1173,9 @@ export function decideStatement(ce, expr, options = {}) {
   // 1b. The complete exact decision, where it applies. Run before the partial
   // provers because it settles both directions, and a false verdict here must
   // not be left to the sampling pass to rediscover — it generally cannot.
-  const exact = decideExactly(ce, expr);
+  const exact = permissions.allows('polynomial.sturm-sign-chart')
+    ? decideExactly(ce, expr)
+    : null;
   if (exact?.value === true) {
     return {
       value: true,
@@ -1153,14 +1235,19 @@ export function decideStatement(ce, expr, options = {}) {
     return { value: null, method: 'undecided', samples: 0, counterexample: null, ...NO_PROOF };
   }
 
-  // 2. Numeric search for a counterexample.
-  const unknowns = expr.unknowns;
+  // 2. Numeric search for a counterexample. Binding operators are carried out
+  // before anything is substituted; see `samplingSubject`.
+  const subject = samplingSubject(ce, expr);
+  if (!subject) {
+    return { value: null, method: 'undecided', samples: 0, counterexample: null, ...NO_PROOF };
+  }
+  const unknowns = subject.unknowns;
   if (unknowns.length === 0) {
     try {
       // Numeric evaluation of a closed statement. Reported as proved, but no
       // trace will ever be offered for it: floating-point agreement is not an
       // exact certificate, and dressing it as one is the mistake to avoid.
-      const n = truthOf(expr.N());
+      const n = truthOf(subject.N());
       if (n !== null) {
         return { value: n, method: 'proved', samples: 0, counterexample: null, ...NO_PROOF };
       }
@@ -1175,16 +1262,16 @@ export function decideStatement(ce, expr, options = {}) {
     const domain = domains.get(id) ?? null;
     const allowComplex = complex && !realSymbols.has(id)
       && (domain === null || domain === 'complex');
-    return buildSamplePool(ce, expr, allowComplex, domain);
+    return buildSamplePool(ce, subject, allowComplex, domain);
   });
-  const random = makeRandom(hashString(expr.toString() + unknowns.join(',')));
+  const random = makeRandom(hashString(subject.toString() + unknowns.join(',')));
   const started = Date.now();
   let decisive = 0;
 
   const trial = (assignment) => {
     let substituted;
     try {
-      substituted = expr.subs(assignment);
+      substituted = subject.subs(assignment);
     } catch {
       return null;
     }
@@ -1264,7 +1351,7 @@ export function decideStatement(ce, expr, options = {}) {
     }
   }
 
-  if (decisive >= MIN_DECISIVE && !hasMismatchedEquationVariables(expr)) {
+  if (decisive >= MIN_DECISIVE && !hasMismatchedEquationVariables(subject)) {
     return { value: true, method: 'sampled', samples: decisive, counterexample: null, ...NO_PROOF };
   }
   return { value: null, method: 'undecided', samples: decisive, counterexample: null, ...NO_PROOF };

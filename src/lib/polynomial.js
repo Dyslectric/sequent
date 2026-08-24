@@ -311,8 +311,15 @@ function holdsOnDomain(ce, poly, variable, domain, kind) {
 /**
  * Prove `left` implies `right`, where both are normalised relations
  * `{kind, diff}`. Single-variable polynomials only; returns null otherwise.
+ *
+ * `permits` is the sheet's permission set, asked about each certificate before
+ * the procedure that would emit it runs. Asking here rather than at the
+ * conclusion is the whole point: Sturm's complete decision procedure preempts
+ * every other route through this file, so a reader who withholds it and still
+ * sees a proof is being shown the one the second-choice procedure found — the
+ * negative discriminant, or the sign on the antecedent's domain.
  */
-export function proveImplicationBySign(ce, left, right) {
+export function proveImplicationBySign(ce, left, right, permits = () => true) {
   const variables = [...new Set([...left.diff.unknowns, ...right.diff.unknowns])];
   if (variables.length !== 1) return null;
   const variable = variables[0];
@@ -321,7 +328,7 @@ export function proveImplicationBySign(ce, left, right) {
   if (!antecedent) return null;
 
   const consequent = polynomialCoefficients(ce, right.diff, variable);
-  if (consequent) {
+  if (consequent && permits('polynomial.sturm-sign-chart')) {
     const exact = decideRationalPolynomialImplication(antecedent, left.kind, consequent, right.kind);
     if (exact === true) {
       return { rule: 'polynomial.sturm-sign-chart', data: { variableLatex: variable } };
@@ -339,6 +346,7 @@ export function proveImplicationBySign(ce, left, right) {
   // substitute; for the others it must be.
   if (domain.kind !== 'point' && !consequent) return null;
 
+  if (!permits('polynomial.domain-sign')) return null;
   return holdsOnDomain(ce, right.diff, variable, domain, right.kind)
     ? { rule: 'polynomial.domain-sign', data: { variableLatex: variable, domain: domain.kind } }
     : null;
@@ -347,8 +355,12 @@ export function proveImplicationBySign(ce, left, right) {
 /**
  * Prove a standalone relation `diff <kind> 0` holds for every value of its free
  * variables — `x^2 >= 0`, `x^2 + y^2 + 1 > 0`, `(x+1)^2 = x^2 + 2x + 1`.
+ *
+ * `permits` is consulted before each certificate's own procedure; see
+ * `proveImplicationBySign` above for why it belongs here rather than at the
+ * caller.
  */
-export function proveRelationBySign(ce, relation) {
+export function proveRelationBySign(ce, relation, permits = () => true) {
   const { kind, diff } = relation;
   const variables = diff.unknowns;
   if (variables.length === 0) return null;
@@ -356,11 +368,13 @@ export function proveRelationBySign(ce, relation) {
   if (variables.length === 1) {
     const coefficients = polynomialCoefficients(ce, diff, variables[0]);
     if (coefficients) {
-      if (decideRationalPolynomialRelation(coefficients, kind) === true) {
+      if (permits('polynomial.sturm-sign-chart')
+        && decideRationalPolynomialRelation(coefficients, kind) === true) {
         return { rule: 'polynomial.sturm-sign-chart', data: { variableLatex: variables[0] } };
       }
       const onReals = signClassOnReals(ce, coefficients);
-      if (satisfiesSign(kind, onReals?.sign)) {
+      if (satisfiesSign(kind, onReals?.sign)
+        && (onReals.via !== 'discriminant' || permits('polynomial.discriminant'))) {
         return onReals.via === 'discriminant'
           ? { rule: 'polynomial.discriminant', data: { variableLatex: variables[0] } }
           : {

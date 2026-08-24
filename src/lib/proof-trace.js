@@ -104,6 +104,16 @@ const RULES = {
     symbol: '∀',
     explanation: 'The body was proved for an arbitrary element of the domain, so it holds for every element.',
   },
+  // The other direction from generalization, and the step that makes a
+  // *function-valued* witness expressible: a claim proved for every element of
+  // a domain holds of the arbitrary element the proof was about, which is what
+  // lets `\exists y, P(x, y)` cite a lemma proved for all `x`.
+  'logic.universal-instantiation': {
+    category: 'inference',
+    label: 'universal instantiation',
+    symbol: '∀',
+    explanation: 'The claim was proved for every element of the domain, so it holds of this one.',
+  },
   // The reader's own witness, made into a proof: `data.witnessLatex` names the
   // term, one premise proves the body at it, and another places it in the
   // domain. The kernel checks all three; see `kernel.js`.
@@ -201,6 +211,16 @@ const RULES = {
     category: 'rewrite',
     label: 'set extensionality',
     explanation: 'Two sets are equal exactly when they have the same members.',
+  },
+  // Why a witness built from the quantified variable is still in the domain:
+  // `x+1` is a natural number whenever `x` is. The standard number sets are
+  // closed under sum, product and non-negative power, and this names that
+  // rather than leaving the membership unexplained.
+  'set.domain-closure': {
+    rests: { kind: 'theorem', theorem: 'closure of the standard number sets' },
+    category: 'certificate',
+    label: 'the domain is closed under these operations',
+    explanation: 'Sums, products and non-negative powers of members of a standard number set are members of it.',
   },
   'set.finite-enumeration': {
     rests: { kind: 'computation' },

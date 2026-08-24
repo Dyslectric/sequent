@@ -476,11 +476,39 @@ rather than whatever the search reached. The membership premise cites what
 actually settled it: a prime witness carries its Pratt certificate, because
 claiming Compute Engine evaluated `11 ∈ ℙ` would be claiming work it cannot do.
 
+**A witness may depend on what it has to beat.** No *number* witnesses
+`∃y, y > x` for every `x` — the witness is `x + 1`, a function of `x`. That is
+the shape of every epsilon-N argument, and it is found and checked:
+
+```
+∀x ∈ ℕ, ∃y ∈ ℕ, y > x          true, proved
+```
+
+```
+x+1 ∈ ℕ           the domain is closed under these operations   admitted
+x < x+1           exact evaluation                              checked
+∀x ∈ ℕ, x < x+1   universal generalization    checked   from 2
+x < x+1           universal instantiation     checked   from 3
+∃y ∈ ℕ, x < y     existential introduction    checked   from 1, 4
+∀x ∈ ℕ, ∃y ∈ ℕ, y > x   universal generalization   checked   from 5
+```
+
+The obligation is *proved* and then instantiated, not asserted — its whole
+derivation is spliced into the trace, because a step that merely claimed it
+would throw the proof away where it matters most. Defined functions are tried
+first, so `g(x) := 2x+1` supplies the witness where the arithmetic shapes do
+not.
+
+The one admitted step is worth reading. `x + 1 ∈ ℕ` is not decidable by the set
+machinery, which rightly refuses to guess at a symbolic membership in the
+naturals — so it rests on the standard number sets being closed under sum,
+product and non-negative power, and the row says exactly that rather than
+leaving it unexplained.
+
 **Finding no witness decides nothing.** The search is a search — integers to
-twelve and a handful of small rationals — so a statement whose witness lies
-outside it stays `undecided` rather than being called false. `∃x ∈ ℝ, x² = 2`
-is true and out of reach. So is anything needing a witness that *depends* on a
-quantified variable: `∀x ∈ ℕ, ∃y ∈ ℕ, y > x` wants a function, not a number.
+twelve, a handful of small rationals, and a few shapes in the quantified
+variable — so a statement whose witness lies outside it stays `undecided`
+rather than being called false. `∃x ∈ ℝ, x² = 2` is true and out of reach.
 
 ### The primes
 

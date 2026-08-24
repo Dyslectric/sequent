@@ -988,8 +988,23 @@ function createScope(context) {
   // definitions it unfolds, and any obligation the engine discharged before
   // handing the statement over — that an integral is proper, for one.
   for (const premise of context?.premises ?? []) {
-    const id = scope.step(premise.rule, [], premise.conclusionLatex, premise.data ?? null);
-    if (id !== OPAQUE_STEP) scope.expansionIds.push(id);
+    // A premise the engine proved outright arrives as a whole derivation
+    // rather than as one asserted line, and is spliced in with its evidence
+    // intact. That is what a constructed witness needs: its obligations were
+    // *proved*, and a step that merely asserted them would throw the proof
+    // away at the moment it mattered most.
+    let id;
+    if (premise.fragment) {
+      try {
+        const adopted = builder.adopt(premise.fragment);
+        id = adopted ?? OPAQUE_STEP;
+      } catch {
+        id = OPAQUE_STEP;
+      }
+    } else {
+      id = scope.step(premise.rule, [], premise.conclusionLatex, premise.data ?? null);
+    }
+    if (id !== OPAQUE_STEP && id !== null) scope.expansionIds.push(id);
   }
   return scope;
 }

@@ -1004,6 +1004,70 @@ check('a prime witness carries the certificate that placed it in the domain', ()
 });
 
 /**
+ * A witness that varies with what it has to beat.
+ *
+ * No *number* witnesses `\exists y, y>x` for every `x`; the witness is `x+1`,
+ * a function of the thing it beats. This is the shape of every epsilon-N
+ * argument, and it was the standing limit on the constant search.
+ */
+check('a function-valued witness is found and its derivation is checked', () => {
+  const row = new Sheet().evaluateAll([
+    '\\forall x\\in\\mathbb{N}, \\exists y\\in\\mathbb{N}, y>x',
+  ]).at(-1);
+  if (row.value !== true) return `came back ${row.value}`;
+  if (row.proofStatus !== 'available') return `status ${row.proofStatus}`;
+
+  const byRule = new Map(row.proof.steps.map((step) => [step.rule, step]));
+  const witness = byRule.get('logic.exists-intro');
+  if (witness?.data?.witnessLatex !== 'x+1') return `witness ${witness?.data?.witnessLatex}`;
+  if (witness.trust !== 'verified') return `the witness step is ${witness.trust}`;
+
+  // The obligation is proved and instantiated, not asserted: the derivation
+  // has to be spliced in, or the proof is thrown away where it matters most.
+  const instantiation = byRule.get('logic.universal-instantiation');
+  if (!instantiation?.premises.length) return 'the instantiation cites nothing';
+  if (instantiation.trust !== 'verified') return `instantiation is ${instantiation.trust}`;
+  const root = row.proof.steps.find((step) => step.id === row.proof.root);
+  return root?.rule === 'logic.universal-generalization' ? null : `root is ${root?.rule}`;
+});
+
+check('a false statement of that shape finds no witness', () => {
+  for (const line of [
+    '\\forall x\\in\\mathbb{N}, \\exists y\\in\\mathbb{N}, y<x',
+    '\\forall x\\in\\mathbb{R}, \\exists y\\in\\mathbb{R}, y>x\\wedge y<x',
+  ]) {
+    const row = new Sheet().evaluateAll([line]).at(-1);
+    if (row.value === true) return `${line} was proved`;
+  }
+  return null;
+});
+
+check('universal instantiation is checked against the universal it cites', () => {
+  const sound = trace(
+    { id: 's1', rule: 'logic.tautology', conclusionLatex: '\\forall x\\in\\R, 0\\le x^2' },
+    {
+      id: 's2',
+      rule: 'logic.universal-instantiation',
+      premises: ['s1'],
+      conclusionLatex: '0\\le x^2',
+    },
+  );
+  if (rootTrust(certify(sound)) !== 'verified') return 'a real instantiation was not checked';
+
+  // The body is not what the premise says, so nothing was instantiated.
+  const forged = trace(
+    { id: 's1', rule: 'logic.tautology', conclusionLatex: '\\forall x\\in\\R, 0\\le x^2' },
+    {
+      id: 's2',
+      rule: 'logic.universal-instantiation',
+      premises: ['s1'],
+      conclusionLatex: '0\\le x^3',
+    },
+  );
+  return rootTrust(certify(forged)) === 'verified' ? 'a bad instantiation was verified' : null;
+});
+
+/**
  * Finding no witness is not a refutation.
  *
  * The search is a search. A statement whose witness is outside the candidates

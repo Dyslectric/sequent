@@ -76,6 +76,19 @@ const NUMBER_SET_RANK = new Map([
 ]);
 
 /**
+ * Whether one standard numeric domain sits inside another.
+ *
+ * The ranking above is a chain, so containment is a comparison. This is
+ * exported for the witness search, which has to know that a natural number is
+ * a real one before it can offer `x+1` as a witness in `\mathbb{R}`.
+ */
+export function numericDomainContains(outerSymbol, innerSymbol) {
+  const inner = NUMBER_SET_RANK.get(innerSymbol);
+  const outer = NUMBER_SET_RANK.get(outerSymbol);
+  return inner !== undefined && outer !== undefined && inner <= outer;
+}
+
+/**
  * The sampling domain each standard numeric set stands for. A universal over
  * one of these is not a pointwise implication over an opaque membership atom —
  * it is the app's ordinary universal reading of a free variable, narrowed to a

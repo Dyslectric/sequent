@@ -11,7 +11,7 @@ import { IdentifierRegistry, sanitize } from './identifiers.js';
 import { decideStatement } from './decide.js';
 import { decideGroupEquation } from './group-word.js';
 import {
-  NO_PROOF, OPAQUE_PROOF, provedBy, restoreIdentifiers, singleStep,
+  NO_PROOF, OPAQUE_PROOF, createTraceBuilder, provedBy, restoreIdentifiers, singleStep,
 } from './proof-trace.js';
 import { certify } from './kernel.js';
 import {
@@ -40,6 +40,7 @@ import {
   QUANTIFIERS,
   quantifierMissingComma,
   radicalMembershipCertificate,
+  numericDomainContains,
   reinterpretCartesianProducts,
   resolveCardinalities,
   SET_RELATIONS,
@@ -1720,12 +1721,181 @@ export class Sheet {
    * a subset relation collapsing to a truth value — is a transformation this
    * code cannot yet describe, so the row stays opaque.
    */
+  /**
+   * A witness that depends on the variable it is quantified under.
+   *
+   * `\forall x\in\mathbb{N}, \exists y\in\mathbb{N}, y>x` is true and no
+   * *number* witnesses it: the witness is `x+1`, a function of the thing it
+   * has to beat. The constant search in `witness.js` correctly finds nothing,
+   * which left the whole epsilon-N idiom out of reach — the shape of every
+   * limit proof there is.
+   *
+   * The obligations are proved rather than evaluated, because they are not
+   * ground: `x+1\in\mathbb{N}` and `x<x+1` are claims about every `x` in the
+   * domain. Each is decided by running it back through this same method as an
+   * ordinary statement, and the derivation that comes back is spliced into the
+   * trace rather than asserted — a step that merely claimed them would throw
+   * away the proof at the point it matters most.
+   *
+   * The reader's own functions come first, so a sheet that defines
+   * `N(\epsilon) := \lceil 1/\epsilon\rceil` cites `N`.
+   */
+  functionWitness(expr, used, latexOf) {
+    if (this.searchingWitness) return null;
+    const universal = peelUniversalQuantifiers(expr);
+    if (!universal || universal.bindings.length !== 1) return null;
+    const [binding] = universal.bindings;
+    const parameter = binding.ops[0]?.symbol;
+    const body = universal.body;
+    if (!parameter || body?.operator !== 'Exists' || body.nops !== 2) return null;
+
+    const [innerBinding, claim] = body.ops;
+    if (innerBinding?.operator !== 'Element' || innerBinding.nops !== 2) return null;
+    const variable = innerBinding.ops[0]?.symbol;
+    const codomain = innerBinding.ops[1];
+    if (!variable || !codomain || !claim) return null;
+
+    this.searchingWitness = true;
+    try {
+      for (const { term, closed } of this.witnessTerms(parameter)) {
+        let member;
+        let instance;
+        try {
+          member = this.ce.box(['Element', term, codomain]);
+          instance = claim.subs({ [variable]: term });
+        } catch {
+          continue;
+        }
+        // The claim is the real obligation and is always proved outright.
+        const provenClaim = this.proveUnder(binding, instance, used, latexOf);
+        if (!provenClaim) continue;
+
+        // Membership sometimes is and sometimes is not decidable. `x+1\in
+        // \mathbb{R}` falls out for a real `x`; `x+1\in\mathbb{N}` does not,
+        // because the set machinery rightly refuses to guess at a symbolic
+        // membership in the naturals. Where the term was built from the
+        // quantified variable by operations the standard number sets are
+        // closed under, that closure is the reason, and naming it is better
+        // than abandoning a witness over a fact nobody doubts.
+        const provenMember = this.proveUnder(binding, member, used, latexOf);
+        const membership = provenMember
+          ? this.instantiated(provenMember, latexOf(member))
+          : this.closureOf(binding, codomain, closed, latexOf(member));
+        if (!membership) continue;
+
+        return {
+          witnessLatex: latexOf(term),
+          statementLatex: latexOf(body),
+          premises: [membership, this.instantiated(provenClaim, latexOf(instance))],
+          bindingsLatex: [latexOf(binding)],
+        };
+      }
+      return null;
+    } finally {
+      this.searchingWitness = false;
+    }
+  }
+
+  /**
+   * Terms that might witness, the reader's own functions first.
+   *
+   * `closed` marks a term built from the quantified variable and non-negative
+   * integers by sum, product and power alone — the operations every standard
+   * number set is closed under. A defined function is not marked, because
+   * nothing here knows where it sends things.
+   */
+  witnessTerms(parameter) {
+    const symbol = this.ce.box(parameter);
+    const terms = [];
+    for (const [id, definition] of this.definitions) {
+      if (definition?.kind !== 'function' || definition.arity !== 1) continue;
+      try {
+        terms.push({ term: this.ce.box([id, symbol]), closed: false });
+      } catch { /* a definition this engine cannot apply is one it cannot try */ }
+    }
+    for (const build of [
+      () => this.ce.box(['Add', symbol, 1]),
+      () => symbol,
+      () => this.ce.box(['Add', symbol, 2]),
+      () => this.ce.box(['Multiply', 2, symbol]),
+      () => this.ce.box(['Power', symbol, 2]),
+      () => this.ce.box(['Add', ['Multiply', 2, symbol], 1]),
+    ]) {
+      try {
+        terms.push({ term: build(), closed: true });
+      } catch { /* a shape this engine cannot build is one it cannot try */ }
+    }
+    return terms;
+  }
+
+  /**
+   * Membership justified by the domain being closed, rather than by a proof.
+   *
+   * Only for a term this code built itself out of the quantified variable, and
+   * only into a standard numeric domain that contains the one the variable
+   * came from. Both halves matter: the operations have to be closure-
+   * preserving, and `\mathbb{N}` has to sit inside the codomain.
+   */
+  closureOf(binding, codomain, closed, conclusionLatex) {
+    if (!closed) return null;
+    const from = binding.ops?.[1]?.symbol;
+    const into = codomain?.symbol;
+    if (!from || !into || !numericDomainContains(into, from)) return null;
+    const builder = createTraceBuilder();
+    const root = builder.step('set.domain-closure', { conclusionLatex });
+    return { fragment: builder.finish(root) };
+  }
+
+  /** `\forall <binding>, claim`, proved, with its derivation — or null. */
+  proveUnder(binding, claim, used, latexOf) {
+    let verdict;
+    try {
+      const obligation = this.ce.box(['ForAll', binding, claim]);
+      // A source is supplied so the sub-decision builds a trace: the whole
+      // point is to splice its derivation in, and a proof context is what
+      // makes one at all.
+      verdict = this.evaluateStatement(obligation, used, {
+        kind: 'statement',
+        latex: latexOf(obligation),
+      });
+    } catch {
+      return null;
+    }
+    return verdict?.kind === 'truth' && verdict.value === true ? verdict : null;
+  }
+
+  /**
+   * A proof of `\forall x\in D, A` turned into evidence for `A` itself.
+   *
+   * The generalization is what was proved; the existential below needs the
+   * instance. Where the sub-proof came back with a derivation it is spliced in
+   * and the instantiation cites it; where it did not, the step stands alone
+   * and admitted, which is the ordinary currency here.
+   */
+  instantiated(verdict, conclusionLatex) {
+    const builder = createTraceBuilder();
+    let premises = [];
+    if (verdict.proofStatus === 'available' && verdict.proof) {
+      try {
+        const adopted = builder.adopt(verdict.proof);
+        if (adopted) premises = [adopted];
+      } catch { /* an unusable fragment leaves the instantiation on its own */ }
+    }
+    const root = builder.step('logic.universal-instantiation', { premises, conclusionLatex });
+    return { fragment: builder.finish(root) };
+  }
+
   setProofContext(proofBase, source, latexOf, { certificate, generalized, untouched }) {
     if (!proofBase) return null;
     if (certificate) {
       return {
         ...proofBase,
-        statementLatex: source.latex,
+        // A certificate that concludes something *smaller* than the line says
+        // so, and hands the rest to a wrapping step. A function-valued witness
+        // is the case: `\exists y, P(x,y)` is what the witness establishes,
+        // and the generalization over `x` is a separate inference.
+        statementLatex: certificate.statementLatex ?? source.latex,
+        wrap: certificate.wrap ?? null,
         decidedBy: certificate,
         // A certificate whose rule takes premises supplies them here, and they
         // join whatever the engine already discharged. `logic.exists-intro` is
@@ -1886,6 +2056,34 @@ export class Sheet {
     // of its cases was the true one.
     //
     // Finding no witness proves nothing, so everything below still runs.
+    // A witness that varies with the variable it is quantified under comes
+    // first, because the constant search below cannot see it: no number
+    // witnesses `\exists y, y>x` for every `x`.
+    const varying = proofBase && this.functionWitness(decidedExpr, used, latexOf);
+    if (varying) {
+      verdict = decideStatement(this.ce, this.ce.box('True'), {
+        complex,
+        allowSampling: false,
+        domains,
+        allowDirectEvaluation: true,
+        realSymbols: new Set(analysis?.realSymbols ?? []),
+        proofContext: this.setProofContext(proofBase, source, latexOf, {
+          certificate: {
+            rule: 'logic.exists-intro',
+            data: { witnessLatex: varying.witnessLatex },
+            statementLatex: varying.statementLatex,
+            wrap: {
+              rule: 'logic.universal-generalization',
+              latex: source.latex,
+              data: { bindingsLatex: varying.bindingsLatex },
+            },
+            premises: varying.premises,
+          },
+        }),
+      });
+      return this.truthOfVerdict(verdict, decidedExpr, boundSymbols, used);
+    }
+
     const witness = existentialWitness(this.ce, decidedExpr, this.definitions);
     if (witness) {
       const witnessLatex = latexOf(witness.witnessExpr);
@@ -1988,15 +2186,23 @@ export class Sheet {
       });
     }
 
+    return this.truthOfVerdict(verdict, decidedExpr, boundSymbols, used);
+  }
+
+  /**
+   * A decision, rendered back into the reader's own names.
+   *
+   * Lowering introduces internal symbols for bound elements; this is the
+   * boundary where every name becomes one the reader actually typed, and so
+   * the last point at which the kernel can check a step against the names it
+   * will be shown under.
+   */
+  truthOfVerdict(verdict, decidedExpr, boundSymbols, used) {
     return {
       kind: 'truth',
       value: verdict.value,
       method: verdict.method,
       samples: verdict.samples,
-      // Lowering introduces internal symbols for bound elements; this is the
-      // boundary where every name becomes one the reader actually typed, and
-      // so the last point at which the kernel can check a step against the
-      // names it will be shown under.
       proof: certify(restoreIdentifiers(verdict.proof, this.registry)),
       proofStatus: verdict.proofStatus,
       counterexample: verdict.counterexample

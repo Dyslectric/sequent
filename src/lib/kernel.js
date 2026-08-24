@@ -1974,6 +1974,27 @@ function checkExists(conclusion, premises, step) {
   return premises.some((premise) => key(premise) === key(member)) ? CHECKED : UNKNOWN;
 }
 
+/**
+ * Universal instantiation, at the arbitrary element.
+ *
+ * From `\forall v \in D, B` the body `B` follows with `v` still free, which is
+ * what lets a lemma proved for every `x` support a claim about the `x` a
+ * derivation is currently reasoning about. The check is that the premise is a
+ * universal whose body is exactly the conclusion; instantiating at some other
+ * term is a different step and is not recognised here.
+ *
+ * Abstains rather than refuses when nothing matches, because a premise this
+ * kernel could not read is not a premise it may call wrong.
+ */
+function checkInstantiation(conclusion, premises) {
+  const wanted = key(conclusion);
+  for (const premise of premises) {
+    if (premise?.type !== '\\forall' || !premise.body) continue;
+    if (key(premise.body) === wanted) return CHECKED;
+  }
+  return UNKNOWN;
+}
+
 /** Replace a free variable by a term throughout a proposition's atoms. */
 function substitute(formula, variable, term) {
   const inTokens = (tokens) => tokens.flatMap((token) => (token === variable ? term : [token]));
@@ -2030,6 +2051,7 @@ const CHECKERS = new Map(Object.entries({
   'logic.iff-intro': checkIffIntro,
   'logic.vacuous': checkVacuous,
   'logic.universal-generalization': checkUniversal,
+  'logic.universal-instantiation': checkInstantiation,
   'logic.exists-intro': checkExists,
   'logic.tautology': checkTautology,
   'relation.normalize': checkNormalize,

@@ -1,6 +1,7 @@
 # Beyond the oracle
 
-Status: phase 0, Tier 1 and phase 2 implemented; phases 1 and 3-5 proposed
+Status: phase 0, Tier 1 and phase 2 implemented, phase 1 partly; phases 3-5
+proposed
 
 This plan begins where `docs/proof-kernel.md` stops. That plan closes with a
 sentence — `engine.exact-evaluation` "never becomes verified" — and the
@@ -19,8 +20,8 @@ Numbers below come from running the demo catalogue through the engine and
 reading the trust the kernel assigned, not from reading the code. `npm test`
 passes and `probe-kernel.mjs` reports SOUND over 8,000 generated cases.
 
-**25 of the 37 registered rules have checkers**, after phase 0. Across the
-eleven demos there are 46 truth rows and 90 proof steps:
+**26 of the 39 registered rules have checkers.** Across the eleven demos
+there are 46 truth rows and 90 proof steps:
 
 | Rows | Trust | Before phase 0 |
 | --- | --- | --- |
@@ -40,13 +41,16 @@ The 59 unchecked steps cluster hard, and the clusters are the work list:
 | Steps | Rule | Why it is unchecked |
 | --- | --- | --- |
 | 14 | `polynomial.sturm-sign-chart` | no checker; phase 3's largest item |
-| 12 | `definition.unfold` | needs phase 4, not a checker |
-| 11 | `logic.universal-generalization` | checker abstains: *premises not matched* |
+| 12 | `definition.unfold` | a stipulation; nothing to check |
 | 9 | `algebra.finite-exhaustion` | no checker; re-run the enumeration |
 | 5 | `topology.constructor-certificate` | no checker |
-| 5 | `relation.normalize` | checker abstains: *premises not matched* |
+| 5 | `relation.normalize` | one claim in two notations; needs Tier 2 |
+| 5 | `logic.universal-generalization` | the same five, one level up |
 | 2 | `analysis.epsilon-delta-witness` | no checker |
 | 1 | `analysis.induction` | no checker |
+
+`verified` steps went from 28 to 34 in phase 1, all six out of
+`logic.universal-generalization`.
 
 The two abstaining rows are the interesting ones. Both have working checkers,
 and the claim that both abstained *for the same reason* was wrong — worth
@@ -569,13 +573,39 @@ Compute Engine *prints* the remainder it already knew how to read as
 existential the search reaches is `verified` or `certified` with nothing
 admitted.
 
-**What it does not reach.** A witness that depends on the quantified variable
-is a *function*, not a constant, so `orall x\in\mathbb{N}, \exists y\in
-\mathbb{N}, y>x` stays undecided — the epsilon-N idiom needs the witness to
-be `N(\epsilon)`, and supplying one is a separate piece of work from finding
-a number. The search reaches integers to twelve and a handful of small
-rationals, so `\exists p\in\mathbb{P}, p>100` is out of range while
-`p>10` is not. Euclid's construction needs the function form too.
+**Function-valued witnesses followed.** A witness that depends on the
+quantified variable is a function rather than a constant, and that is the
+shape of every epsilon-N argument. `functionWitness` in `engine.js` finds it:
+for each candidate term built from the quantified variable — the reader's own
+one-argument definitions first — it proves the two obligations *over the whole
+domain* and splices their derivations in.
+
+    x+1 in N          the domain is closed under these operations   admitted
+    x < x+1           exact evaluation                              checked
+    forall x in N, x < x+1     universal generalization    checked
+    x < x+1                    universal instantiation     checked
+    exists y in N, x < y       existential introduction    checked
+    forall x in N, exists y in N, y > x   universal generalization  checked
+
+Two things had to be added for that shape to close. `logic.universal-
+instantiation` is a new rule and a new checker — a lemma proved for every `x`
+has to be usable about the `x` a derivation is currently reasoning about, and
+without it the obligation could only be asserted. And the obligations arrive
+as whole derivations rather than as asserted lines, which is what the trace
+builder's `adopt` is for; a premise that merely claimed them would throw the
+proof away at the point it matters most.
+
+The one admitted step is the interesting one. `x+1\in\mathbb{N}` is *not*
+decidable by the set machinery, which correctly refuses to guess at a symbolic
+membership in the naturals — so it rests on `set.domain-closure`, a named
+theorem, and the row says so. Over `\mathbb{R}` the same obligation is proved
+outright and no closure appeal is needed.
+
+**What it still does not reach.** The search reaches integers to twelve, a
+handful of small rationals, and a few shapes in the quantified variable, so
+`\exists p\in\mathbb{P}, p>100` is out of range while `p>10` is not.
+Euclid's construction wants a witness built from the *product* of a finite
+set, which is neither.
 
 ### Phase 3: finish the kernel plan's phase 3
 

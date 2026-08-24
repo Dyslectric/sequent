@@ -117,15 +117,23 @@ function verifiesAgainst(ce, expr, symbols, { A, b, c }) {
 /**
  * Cholesky with exact rational pivots, tolerating the singular case.
  *
- * Returns the pivots in order, or null the moment the matrix proves not to be
- * positive semidefinite: a negative pivot, or a zero pivot whose row still
- * carries an off-diagonal entry — which is exactly the `[[0,1],[1,0]]` shape
- * that is indefinite rather than degenerate.
+ * Returns an LDL-style sum-of-squares decomposition, or null the moment the
+ * matrix proves not to be positive semidefinite: a negative pivot, or a zero
+ * pivot whose row still carries an off-diagonal entry — which is exactly the
+ * `[[0,1],[1,0]]` shape that is indefinite rather than degenerate.
+ *
+ * A positive pivot d at position k contributes
+ *
+ *     d (z_k + sum_{j>k} work[k][j]/d z_j)^2.
+ *
+ * Keeping those linear forms is what turns the prover's answer into a witness
+ * a separate kernel can check merely by expanding squares.
  */
-function semidefinitePivots(M) {
+function semidefiniteDecomposition(M) {
   const m = M.length;
   const work = M.map((row) => [...row]);
   const pivots = [];
+  const terms = [];
   for (let k = 0; k < m; k++) {
     const pivot = work[k][k];
     if (R.sign(pivot) < 0) return null;
@@ -135,6 +143,14 @@ function semidefinitePivots(M) {
       continue;
     }
     pivots.push(pivot);
+    terms.push({
+      coefficient: pivot,
+      base: Array.from({ length: m }, (_, j) => {
+        if (j < k) return R.ZERO;
+        if (j === k) return R.ONE;
+        return R.div(work[k][j], pivot);
+      }),
+    });
     for (let i = k + 1; i < m; i++) {
       const factor = R.div(work[i][k], pivot);
       if (R.sign(factor) === 0) continue;
@@ -143,7 +159,33 @@ function semidefinitePivots(M) {
       }
     }
   }
-  return pivots;
+  return { pivots, terms };
+}
+
+const unsignedRationalLatex = (value) => {
+  const numerator = value.n < 0n ? -value.n : value.n;
+  return value.d === 1n
+    ? `${numerator}`
+    : `\\frac{${numerator}}{${value.d}}`;
+};
+
+/** Render one exact affine form without passing its rationals through Number. */
+function affineLatex(coefficients, symbols) {
+  const terms = [];
+  coefficients.forEach((coefficient, index) => {
+    const sign = R.sign(coefficient);
+    if (sign === 0) return;
+    const isConstant = index === symbols.length;
+    const magnitude = unsignedRationalLatex(coefficient);
+    const body = isConstant
+      ? magnitude
+      : `${magnitude === '1' ? '' : `${magnitude}\\cdot `}${symbols[index]}`;
+    terms.push({ sign, body });
+  });
+  return terms.map(({ sign, body }, index) => {
+    if (index === 0) return sign < 0 ? `-${body}` : body;
+    return sign < 0 ? `-${body}` : `+${body}`;
+  }).join('');
 }
 
 /**
@@ -158,9 +200,10 @@ function semidefinitePivots(M) {
  * `x^2 + 1` in the variables `(x, y)` is the case that rules out the easier
  * test — M is singular, yet the polynomial is strictly positive everywhere.
  *
- * @returns {true|null} true when certified, null when this prover has nothing
- *   to say. It never reports false: failing to certify non-negativity is not
- *   evidence that the polynomial goes negative.
+ * @returns {{sosCoefficientsLatex: string[], sosBasesLatex: string[]}|null}
+ *   an exact sum-of-squares witness when certified, null when this prover has
+ *   nothing to say. It never reports false: failing to certify
+ *   non-negativity is not evidence that the polynomial goes negative.
  */
 export function proveQuadraticFormNonNegative(ce, diff, kind) {
   if (kind !== 'ge' && kind !== 'gt') return null;
@@ -183,8 +226,14 @@ export function proveQuadraticFormNonNegative(ce, diff, kind) {
     return R.mul(i === n ? form.b[j] : form.b[i], half);
   }));
 
-  const pivots = semidefinitePivots(M);
-  if (!pivots) return null;
-  if (kind === 'ge') return true;
-  return R.sign(pivots[n]) > 0 ? true : null;
+  const decomposition = semidefiniteDecomposition(M);
+  if (!decomposition) return null;
+  if (kind === 'gt' && R.sign(decomposition.pivots[n]) <= 0) return null;
+
+  return {
+    sosCoefficientsLatex: decomposition.terms
+      .map(({ coefficient }) => unsignedRationalLatex(coefficient)),
+    sosBasesLatex: decomposition.terms
+      .map(({ base }) => affineLatex(base, symbols)),
+  };
 }

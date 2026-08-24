@@ -86,6 +86,29 @@ export function boxedRational(expr) {
   return null;
 }
 
+/**
+ * Does this polynomial have a real root anywhere in the closed interval?
+ *
+ * This is the pole test behind the integration gate: a rational integrand is
+ * safe to integrate over `[lo, hi]` exactly when its denominator never
+ * vanishes there. Sturm's theorem counts roots in the half-open `(lo, hi]`,
+ * so the lower endpoint is tested on its own.
+ *
+ * Returns null when the question cannot be settled exactly — irrational
+ * coefficients, say — which callers must read as "it might", never as "no".
+ */
+export function vanishesOnClosedInterval(coefficients, lo, hi) {
+  const poly = exactPolynomial(coefficients);
+  if (!poly) return null;
+  const low = boxedRational(lo);
+  const high = boxedRational(hi);
+  if (!low || !high) return null;
+  const [a, b] = compare(low, high) <= 0 ? [low, high] : [high, low];
+  if (isZeroPoly(poly)) return true;
+  if (evaluate(poly, a).n === 0n) return true;
+  return rootCount(sturmSequence(poly), a, b) > 0;
+}
+
 /** Boxed coefficients arrive highest-power first; internal polynomials ascend. */
 export function exactPolynomial(coefficients) {
   const result = coefficients.map(boxedRational);

@@ -13,11 +13,19 @@
  *      A single FALSE sample disproves the statement and is reported as a
  *      counterexample; surviving every sample is reported as true-but-unproven,
  *      never as a proof.
+ *
+ * Every return also carries a proof status. The exact passes are `opaque` —
+ * their verdict is exact, but they do not yet build the trace that explains it
+ * — and the numeric pass is `unavailable`, permanently: a statement that
+ * merely survived sampling has no derivation to show. See `proof-trace.js`.
  */
 
 import { polynomialCoefficients, proveImplicationBySign, proveRelationBySign } from './polynomial.js';
 import { decideRationalPolynomialFormula, rationalLatex } from './rational-polynomial.js';
 import { proveComplexStatement } from './complex-proof.js';
+import {
+  NO_PROOF, OPAQUE_PROOF, createTraceBuilder, provedBy,
+} from './proof-trace.js';
 
 const RELATIONS = new Set([
   'Equal', 'NotEqual', 'Less', 'LessEqual', 'Greater', 'GreaterEqual', 'IdenticallyEqual',
@@ -587,21 +595,24 @@ function universalNonzeroSign(ce, cofactor) {
       if (value.isNegative === true) return -1;
     } catch { /* try structural proof below */ }
   }
-  if (proveRelationBySign(ce, { kind: 'gt', diff: cofactor }) === true) return 1;
+  if (proveRelationBySign(ce, { kind: 'gt', diff: cofactor })) return 1;
   const negated = ce.box(['Negate', cofactor]);
-  if (proveRelationBySign(ce, { kind: 'gt', diff: negated }) === true) return -1;
+  if (proveRelationBySign(ce, { kind: 'gt', diff: negated })) return -1;
   return null;
 }
 
-/** Multiplication by a nonzero (or positive) factor preserves a relation. */
+/**
+ * Multiplication by a nonzero (or positive) factor preserves a relation.
+ * Returns the factor and its sign, so the trace can name what it scaled by.
+ */
 function impliesThroughProduct(ce, antecedent, consequent) {
-  if (antecedent.kind !== consequent.kind) return false;
+  if (antecedent.kind !== consequent.kind) return null;
   const cofactor = productCofactor(ce, antecedent.diff, consequent.diff);
-  if (!cofactor) return false;
-  const cofactorSign = universalNonzeroSign(ce, cofactor);
-  if (cofactorSign === null) return false;
-  if (antecedent.kind === 'eq' || antecedent.kind === 'ne') return true;
-  return cofactorSign > 0;
+  if (!cofactor) return null;
+  const sign = universalNonzeroSign(ce, cofactor);
+  if (sign === null) return null;
+  if (antecedent.kind === 'eq' || antecedent.kind === 'ne') return { cofactor, sign };
+  return sign > 0 ? { cofactor, sign } : null;
 }
 
 /**
@@ -612,41 +623,67 @@ function impliesThroughProduct(ce, antecedent, consequent) {
  *   - an equation whose polynomial is a multiple of the antecedent's
  *     (`x = 2` implies `x^2 = 4`).
  */
-function proveImplies(ce, left, right) {
+function proveImplies(ce, left, right, scope, top = null) {
   const a = normalizeRelation(ce, left);
   const b = normalizeRelation(ce, right);
   if (!a || !b) return null;
 
-  if (a.kind === b.kind && isZero(ce.box(['Subtract', a.diff, b.diff]))) return true;
+  const conclude = concluding(scope, () => ce.box(['Implies', left, right]), top);
+
+  if (a.kind === b.kind && isZero(ce.box(['Subtract', a.diff, b.diff]))) {
+    return conclude('relation.normalize');
+  }
 
   // Trivially true when the consequent holds for every value anyway...
-  if (proveRelationBySign(ce, b) === true) return true;
+  const always = proveRelationBySign(ce, b);
+  if (always) {
+    const consequent = concluding(scope, right, null)(always.rule, [], always.data);
+    return conclude('logic.implies-intro', [consequent]);
+  }
   // ...and vacuously true when the antecedent can never hold at all.
   const impossible = negateRelation(ce, a);
-  if (impossible && proveRelationBySign(ce, impossible) === true) return true;
+  if (impossible && proveRelationBySign(ce, impossible)) {
+    return conclude('logic.vacuous');
+  }
 
   const forwardPower = powerRelationship(ce, a.diff, b.diff);
   if (forwardPower && impliesThroughPower(
     a.kind, b.kind, forwardPower.exponent, forwardPower.scaleSign
-  )) return true;
+  )) return conclude('order.power-monotonicity', [], { exponent: forwardPower.exponent });
 
   const reversePower = powerRelationship(ce, b.diff, a.diff);
   if (reversePower && impliesThroughPower(
     a.kind, b.kind, reversePower.exponent, reversePower.scaleSign, true
-  )) return true;
+  )) return conclude('order.power-monotonicity', [], { exponent: reversePower.exponent });
 
-  if (impliesThroughProduct(ce, a, b) || impliesThroughProduct(ce, b, a)) return true;
+  const product = impliesThroughProduct(ce, a, b) ?? impliesThroughProduct(ce, b, a);
+  if (product) {
+    return conclude(
+      product.sign > 0 ? 'order.positive-scale' : 'relation.nonzero-scale',
+      [],
+      { scaleLatex: scope.show(product.cofactor) },
+    );
+  }
 
   const affine = affineRelationship(ce, a.diff, b.diff);
   if (affine && impliesUnderAffine(a.kind, b.kind, signOf(affine.c), signOf(affine.k))) {
-    return true;
+    // A pure rescaling is positive scaling; an offset as well makes it the
+    // more general affine step, and the trace should not conflate them.
+    const rule = signOf(affine.k) === 0 ? 'order.positive-scale' : 'order.affine-monotonicity';
+    return conclude(rule, [], {
+      scaleLatex: scope.show(affine.c),
+      offsetLatex: scope.show(affine.k),
+    });
   }
 
-  if (a.kind === 'eq' && b.kind === 'eq' && dividesExactly(ce, a.diff, b.diff)) return true;
+  if (a.kind === 'eq' && b.kind === 'eq' && dividesExactly(ce, a.diff, b.diff)) {
+    return conclude('polynomial.multiple');
+  }
 
   // Nonlinear, one variable: turn the antecedent into a domain and certify the
   // consequent's sign on it. This is what reaches `x > 2 => x^2 > 3`.
-  if (proveImplicationBySign(ce, a, b) === true) return true;
+  const onDomain = proveImplicationBySign(ce, a, b);
+  if (onDomain) return conclude(onDomain.rule, [], onDomain.data);
 
   return null;
 }
@@ -656,13 +693,17 @@ function proveImplies(ce, left, right) {
  * covers scaling (`x > 2 <-> 2x > 4`) and rearrangement (`x + 1 = 2 <-> x = 1`)
  * without special-casing either.
  */
-function proveEquivalent(ce, left, right) {
+function proveEquivalent(ce, left, right, scope, top = null) {
   const a = normalizeRelation(ce, left);
   const b = normalizeRelation(ce, right);
   if (!a || !b) return null;
 
-  if (proveImplies(ce, left, right) === true && proveImplies(ce, right, left) === true) {
-    return true;
+  const conclude = concluding(scope, () => ce.box(['Equivalent', left, right]), top);
+
+  const forward = proveImplies(ce, left, right, scope);
+  if (forward !== null) {
+    const backward = proveImplies(ce, right, left, scope);
+    if (backward !== null) return conclude('logic.iff-intro', [forward, backward]);
   }
 
   // Fallback for relations the affine test cannot pin down: identical normal
@@ -671,14 +712,14 @@ function proveEquivalent(ce, left, right) {
   const bothInequality = a.kind === b.kind && (a.kind === 'gt' || a.kind === 'ge');
   if (!bothEquality && !bothInequality) return null;
 
-  if (isZero(ce.box(['Subtract', a.diff, b.diff]))) return true;
+  if (isZero(ce.box(['Subtract', a.diff, b.diff]))) return conclude('relation.normalize');
 
   const ratio = constantRatio(ce, a.diff, b.diff);
   if (ratio === null) return null;
   // Scaling an equation by any nonzero constant preserves it; scaling an
   // inequality preserves it only when the constant is positive.
-  if (bothEquality) return true;
-  return ratio > 0 ? true : null;
+  if (bothEquality) return conclude('relation.nonzero-scale');
+  return ratio > 0 ? conclude('order.positive-scale') : null;
 }
 
 /** Convert a supported proposition to the generic exact sign-chart form. */
@@ -734,6 +775,7 @@ function decideExactly(ce, expr) {
 
   return {
     value: verdict.value,
+    variable: variables[0],
     counterexample: verdict.witness
       ? [{ id: variables[0], valueLatex: rationalLatex(verdict.witness) }]
       : null,
@@ -744,10 +786,11 @@ function decideExactly(ce, expr) {
  * Symbolic proof over a whole statement. Chains arrive as `And` of their links,
  * so proving every link proves the chain.
  */
-function proveSymbolically(ce, expr) {
+function proveSymbolically(ce, expr, scope, top = null) {
   const op = expr.operator;
+  const conclude = concluding(scope, expr, top);
 
-  if (booleanSkeletonTautology(expr) === true) return true;
+  if (booleanSkeletonTautology(expr) === true) return conclude('logic.tautology');
 
   // Compute Engine represents homogeneous relation chains as one n-ary
   // relation (`Equal(a, b, c)`, `Less(a, b, c)`, ...), rather than the `And`
@@ -756,9 +799,13 @@ function proveSymbolically(ce, expr) {
   // apply this to NotEqual: its n-ary meaning is pairwise distinct, which is
   // stronger than adjacent inequality alone.
   if (expr.nops > 2 && CHAIN_RELATIONS.has(op)) {
-    return expr.ops.slice(1).every((right, index) => (
-      proveSymbolically(ce, ce.box([op, expr.ops[index], right])) === true
-    )) ? true : null;
+    const links = [];
+    for (let index = 1; index < expr.nops; index += 1) {
+      const link = proveSymbolically(ce, ce.box([op, expr.ops[index - 1], expr.ops[index]]), scope);
+      if (link === null) return null;
+      links.push(link);
+    }
+    return conclude('logic.chain', links);
   }
 
   // Complete for Boolean combinations of univariate rational-polynomial
@@ -767,60 +814,98 @@ function proveSymbolically(ce, expr) {
   const variables = expr.unknowns;
   if (variables.length === 1) {
     const formula = polynomialFormula(ce, expr, variables[0]);
-    if (formula && decideRationalPolynomialFormula(formula)?.value === true) return true;
+    if (formula && decideRationalPolynomialFormula(formula)?.value === true) {
+      return conclude('polynomial.sturm-sign-chart', [], { variableLatex: variables[0] });
+    }
   }
 
   if (op === 'And' && expr.nops > 0) {
-    return expr.ops.every((operand) => proveSymbolically(ce, operand) === true) ? true : null;
+    const parts = [];
+    for (const operand of expr.ops) {
+      const part = proveSymbolically(ce, operand, scope);
+      if (part === null) return null;
+      parts.push(part);
+    }
+    return conclude('logic.and-intro', parts);
   }
   if (op === 'Or' && expr.nops > 0) {
-    return expr.ops.some((operand) => proveSymbolically(ce, operand) === true) ? true : null;
+    for (const operand of expr.ops) {
+      const part = proveSymbolically(ce, operand, scope);
+      if (part !== null) return conclude('logic.or-intro', [part]);
+    }
+    return null;
   }
   if ((op === 'Equivalent' || op === 'IdenticallyEqual') && expr.nops === 2) {
-    return proveEquivalent(ce, expr.ops[0], expr.ops[1]);
+    return proveEquivalent(ce, expr.ops[0], expr.ops[1], scope, top);
   }
   if (op === 'Implies' && expr.nops === 2) {
     const [left, right] = expr.ops;
-    if (left.symbol === 'False' || right.symbol === 'True') return true;
-    if (left.symbol === 'True') return proveSymbolically(ce, right);
+    if (left.symbol === 'False') return conclude('logic.vacuous');
+    if (right.symbol === 'True') return conclude('logic.implies-intro');
+    if (left.symbol === 'True') {
+      const inner = proveSymbolically(ce, right, scope);
+      return inner === null ? null : conclude('logic.implies-intro', [inner]);
+    }
     // A homogeneous relation chain is conjunction-shaped even though Compute
     // Engine stores it as one n-ary relation. Domain lowering commonly places
     // such a chain on either side of an implication, so expose its adjacent
     // links here just as we do for a literal `And` below.
     if (right.nops > 2 && CHAIN_RELATIONS.has(right.operator)) {
-      return right.ops.slice(1).every((operand, index) => proveSymbolically(
-        ce,
-        ce.box(['Implies', left, ce.box([right.operator, right.ops[index], operand])]),
-      ) === true) ? true : null;
+      const parts = [];
+      for (let index = 1; index < right.nops; index += 1) {
+        const link = ce.box([right.operator, right.ops[index - 1], right.ops[index]]);
+        const part = proveSymbolically(ce, ce.box(['Implies', left, link]), scope);
+        if (part === null) return null;
+        parts.push(part);
+      }
+      return conclude('logic.chain', parts);
     }
     if (left.nops > 2 && CHAIN_RELATIONS.has(left.operator)) {
-      const links = left.ops.slice(1).map((operand, index) => (
-        ce.box([left.operator, left.ops[index], operand])
-      ));
-      if (links.some((link) => (
-        proveSymbolically(ce, ce.box(['Implies', link, right])) === true
-      ))) return true;
+      for (let index = 1; index < left.nops; index += 1) {
+        const link = ce.box([left.operator, left.ops[index - 1], left.ops[index]]);
+        const part = proveSymbolically(ce, ce.box(['Implies', link, right]), scope);
+        // One link of the assumed chain already suffices; the rest is surplus.
+        if (part !== null) return conclude('logic.and-elim', [part]);
+      }
     }
     if (left.operator === 'Or') {
-      return left.ops.every((operand) => proveSymbolically(ce, ce.box(['Implies', operand, right])) === true)
-        ? true : null;
+      const cases = [];
+      for (const operand of left.ops) {
+        const part = proveSymbolically(ce, ce.box(['Implies', operand, right]), scope);
+        if (part === null) return null;
+        cases.push(part);
+      }
+      return conclude('logic.cases', cases);
     }
     if (right.operator === 'And') {
-      return right.ops.every((operand) => proveSymbolically(ce, ce.box(['Implies', left, operand])) === true)
-        ? true : null;
+      const parts = [];
+      for (const operand of right.ops) {
+        const part = proveSymbolically(ce, ce.box(['Implies', left, operand]), scope);
+        if (part === null) return null;
+        parts.push(part);
+      }
+      return conclude('logic.and-intro', parts);
     }
-    if (left.operator === 'And' && left.ops.some(
-      (operand) => proveSymbolically(ce, ce.box(['Implies', operand, right])) === true
-    )) return true;
-    if (right.operator === 'Or' && right.ops.some(
-      (operand) => proveSymbolically(ce, ce.box(['Implies', left, operand])) === true
-    )) return true;
-    return proveImplies(ce, expr.ops[0], expr.ops[1]);
+    if (left.operator === 'And') {
+      for (const operand of left.ops) {
+        const part = proveSymbolically(ce, ce.box(['Implies', operand, right]), scope);
+        if (part !== null) return conclude('logic.and-elim', [part]);
+      }
+    }
+    if (right.operator === 'Or') {
+      for (const operand of right.ops) {
+        const part = proveSymbolically(ce, ce.box(['Implies', left, operand]), scope);
+        if (part !== null) return conclude('logic.or-intro', [part]);
+      }
+    }
+    return proveImplies(ce, left, right, scope, top);
   }
   // A bare relation carrying free variables: is it an identity?
   if (RELATIONS.has(op)) {
     const relation = normalizeRelation(ce, expr);
-    return relation ? proveRelationBySign(ce, relation) : null;
+    if (!relation) return null;
+    const certificate = proveRelationBySign(ce, relation);
+    return certificate ? conclude(certificate.rule, [], certificate.data) : null;
   }
   return null;
 }
@@ -845,7 +930,111 @@ function hasMismatchedEquationVariables(expr) {
 }
 
 /**
- * @returns {{value: boolean|null, method: string, samples: number, counterexample: Array|null}}
+ * Proved, but the evidence could not be recorded.
+ *
+ * Trace construction must never be able to cost a row its verdict, so a step
+ * that fails to build yields this instead of null. It counts as a proof
+ * everywhere the value matters and poisons the fragment it belongs to, which
+ * degrades the result to `opaque` while leaving `true` exactly where it was.
+ */
+const OPAQUE_STEP = Symbol('opaque step');
+
+/**
+ * One trace under construction, shared by every branch of a single decision.
+ *
+ * Provers hand back the id of the step that concludes what they proved, so a
+ * composite rule can cite its premises directly and a claim established twice
+ * is recorded once. `enabled` is false whenever the engine cannot vouch for
+ * the displayed form — after domain lowering, for one — and the trace is then
+ * built but discarded rather than describing a statement nobody wrote.
+ */
+function createScope(context) {
+  const builder = createTraceBuilder();
+  const scope = {
+    builder,
+    enabled: Boolean(context?.statementLatex),
+    statementLatex: context?.statementLatex ?? '',
+    wrap: context?.wrap ?? null,
+    // A pass that ran before the decider and already settled the statement;
+    // the trivial re-evaluation below must not take the credit for it.
+    decidedBy: context?.decidedBy ?? null,
+    expansionIds: [],
+    latexOf(expr) {
+      try {
+        return context?.latexOf ? context.latexOf(expr) : (expr?.latex ?? '');
+      } catch {
+        return '';
+      }
+    },
+    step(rule, premises, conclusionLatex, data = null) {
+      if (!this.enabled || premises.includes(OPAQUE_STEP)) return OPAQUE_STEP;
+      try {
+        return builder.step(rule, { premises, conclusionLatex, data });
+      } catch {
+        return OPAQUE_STEP;
+      }
+    },
+    /** Display LaTeX for a supporting detail, or nothing when unused. */
+    show(expr) {
+      return this.enabled ? this.latexOf(expr) : '';
+    },
+    /** The whole statement, established in one exact step. */
+    certificate(rule, data = null) {
+      return this.step(rule, this.expansionIds, this.statementLatex, data);
+    },
+  };
+
+  // What the whole derivation rests on, stated before it starts: the
+  // definitions it unfolds, and any obligation the engine discharged before
+  // handing the statement over — that an integral is proper, for one.
+  for (const premise of context?.premises ?? []) {
+    const id = scope.step(premise.rule, [], premise.conclusionLatex, premise.data ?? null);
+    if (id !== OPAQUE_STEP) scope.expansionIds.push(id);
+  }
+  return scope;
+}
+
+/**
+ * A step concluding `expr`.
+ *
+ * `top` marks the outermost call of a decision: only there does the trace show
+ * the line as the reader wrote it, and only there do the definition expansions
+ * attach, since that is the claim resting on them.
+ */
+const concluding = (scope, expr, top) => (rule, premises = [], data = null) => {
+  // Nothing is rendered for a discarded trace, so a failed branch never pays
+  // to serialize a conclusion it will not show.
+  if (!scope.enabled) return OPAQUE_STEP;
+  const subject = typeof expr === 'function' ? expr() : expr;
+  return scope.step(
+    rule,
+    [...premises, ...(top?.premises ?? [])],
+    top?.latex ?? scope.latexOf(subject),
+    data,
+  );
+};
+
+/**
+ * Close the trace at the winning branch's step, or report an exact opaque
+ * verdict.
+ *
+ * A `wrap` is the rewrite the engine performed before handing the statement
+ * over — stripping universal quantifiers, so far. The branch proves the body;
+ * the wrapping step carries that back to the line the reader wrote, and so it
+ * is the root rather than a premise.
+ */
+function sealed(scope, root) {
+  if (root === null || root === OPAQUE_STEP || !scope.enabled) return OPAQUE_PROOF;
+  const closed = scope.wrap
+    ? scope.step(scope.wrap.rule, [root], scope.wrap.latex, scope.wrap.data ?? null)
+    : root;
+  if (closed === OPAQUE_STEP) return OPAQUE_PROOF;
+  return provedBy(scope.builder.finish(closed));
+}
+
+/**
+ * @returns {{value: boolean|null, method: string, samples: number,
+ *   counterexample: Array|null, proof: object|null, proofStatus: string}}
  */
 export function decideStatement(ce, expr, options = {}) {
   const complex = options.complex ?? false;
@@ -853,6 +1042,7 @@ export function decideStatement(ce, expr, options = {}) {
   const allowDirectEvaluation = options.allowDirectEvaluation !== false;
   const realSymbols = new Set(options.realSymbols ?? []);
   const domains = options.domains instanceof Map ? options.domains : new Map();
+  const scope = createScope(options.proofContext ?? null);
 
   // 1a. Outright proof by the CAS.
   let evaluated;
@@ -867,7 +1057,22 @@ export function decideStatement(ce, expr, options = {}) {
   }
   const direct = evaluated ? truthOf(evaluated) : null;
   if (direct !== null) {
-    return { value: direct, method: 'proved', samples: 0, counterexample: null };
+    return {
+      value: direct,
+      method: 'proved',
+      samples: 0,
+      counterexample: null,
+      // Only a true verdict carries a derivation for now; explaining a false
+      // one is the counterexample's job until refutations are instrumented.
+      // Where an earlier pass already decided the statement, this evaluation
+      // is only reading back its answer, so the trace names that pass.
+      ...(direct === true
+        ? sealed(scope, scope.certificate(
+          scope.decidedBy?.rule ?? 'engine.exact-evaluation',
+          scope.decidedBy?.data ?? null,
+        ))
+        : OPAQUE_PROOF),
+    };
   }
 
   // 1b. The complete exact decision, where it applies. Run before the partial
@@ -875,7 +1080,15 @@ export function decideStatement(ce, expr, options = {}) {
   // not be left to the sampling pass to rediscover — it generally cannot.
   const exact = decideExactly(ce, expr);
   if (exact?.value === true) {
-    return { value: true, method: 'proved', samples: 0, counterexample: null };
+    return {
+      value: true,
+      method: 'proved',
+      samples: 0,
+      counterexample: null,
+      ...sealed(scope, scope.certificate('polynomial.sturm-sign-chart', {
+        variableLatex: exact.variable,
+      })),
+    };
   }
   // The sign chart decides over ℝ. True there carries to any subdomain, but
   // false does not: the point where `n^2 >= n` fails is 2/3, which is no
@@ -889,29 +1102,55 @@ export function decideStatement(ce, expr, options = {}) {
       method: exact.counterexample ? 'counterexample' : 'disproved',
       samples: 0,
       counterexample: exact.counterexample,
+      ...OPAQUE_PROOF,
     };
   }
 
   // 1c. Relation-level reasoning over the connectives.
+  // The complex fragment is decided by rewriting both sides to a common exact
+  // normal form — conjugation, `Re`, and the cosine identities — so that is
+  // what the trace reports, without claiming the finer structure it does not
+  // return.
   if (proveComplexStatement(ce, expr, realSymbols) === true) {
-    return { value: true, method: 'proved', samples: 0, counterexample: null };
+    return {
+      value: true,
+      method: 'proved',
+      samples: 0,
+      counterexample: null,
+      ...sealed(scope, scope.certificate('relation.normalize')),
+    };
   }
-  if (proveSymbolically(ce, expr) === true) {
-    return { value: true, method: 'proved', samples: 0, counterexample: null };
+  const symbolic = proveSymbolically(ce, expr, scope, {
+    premises: scope.expansionIds,
+    latex: scope.statementLatex,
+  });
+  if (symbolic !== null) {
+    return {
+      value: true,
+      method: 'proved',
+      samples: 0,
+      counterexample: null,
+      ...sealed(scope, symbolic),
+    };
   }
 
   if (!allowSampling) {
-    return { value: null, method: 'undecided', samples: 0, counterexample: null };
+    return { value: null, method: 'undecided', samples: 0, counterexample: null, ...NO_PROOF };
   }
 
   // 2. Numeric search for a counterexample.
   const unknowns = expr.unknowns;
   if (unknowns.length === 0) {
     try {
+      // Numeric evaluation of a closed statement. Reported as proved, but no
+      // trace will ever be offered for it: floating-point agreement is not an
+      // exact certificate, and dressing it as one is the mistake to avoid.
       const n = truthOf(expr.N());
-      if (n !== null) return { value: n, method: 'proved', samples: 0, counterexample: null };
+      if (n !== null) {
+        return { value: n, method: 'proved', samples: 0, counterexample: null, ...NO_PROOF };
+      }
     } catch { /* fall through to undecided */ }
-    return { value: null, method: 'undecided', samples: 0, counterexample: null };
+    return { value: null, method: 'undecided', samples: 0, counterexample: null, ...NO_PROOF };
   }
 
   // Domain evidence is per variable. The presence of `i` elsewhere in a
@@ -961,7 +1200,13 @@ export function decideStatement(ce, expr, options = {}) {
       if (k % 16 === 0 && Date.now() - started > TIME_BUDGET_MS) break;
       const verdict = trial({ [id]: pool[k].expr });
       if (verdict === false) {
-        return { value: false, method: 'counterexample', samples: decisive, counterexample: describe([k]) };
+        return {
+          value: false,
+          method: 'counterexample',
+          samples: decisive,
+          counterexample: describe([k]),
+          ...NO_PROOF,
+        };
       }
       if (verdict === true) decisive++;
     }
@@ -992,14 +1237,20 @@ export function decideStatement(ce, expr, options = {}) {
       unknowns.forEach((id, v) => { assignment[id] = pools[v][indices[v]].expr; });
       const verdict = trial(assignment);
       if (verdict === false) {
-        return { value: false, method: 'counterexample', samples: decisive, counterexample: describe(indices) };
+        return {
+          value: false,
+          method: 'counterexample',
+          samples: decisive,
+          counterexample: describe(indices),
+          ...NO_PROOF,
+        };
       }
       if (verdict === true) decisive++;
     }
   }
 
   if (decisive >= MIN_DECISIVE && !hasMismatchedEquationVariables(expr)) {
-    return { value: true, method: 'sampled', samples: decisive, counterexample: null };
+    return { value: true, method: 'sampled', samples: decisive, counterexample: null, ...NO_PROOF };
   }
-  return { value: null, method: 'undecided', samples: decisive, counterexample: null };
+  return { value: null, method: 'undecided', samples: decisive, counterexample: null, ...NO_PROOF };
 }

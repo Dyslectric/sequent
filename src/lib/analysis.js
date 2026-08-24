@@ -414,7 +414,7 @@ function witnessFormula(ce, expr, definitions, makeWitness, realSymbols) {
   const definition = functionDefinition(functionExpr, definitions);
   if (!definition || !epsilon?.symbol || definitions.has(epsilon.symbol)) return null;
 
-  const variable = ce.box(makeWitness?.() ?? 'AnalysisWitness');
+  const variable = ce.box(makeWitness?.('point') ?? 'AnalysisWitness');
   const delta = evaluated(deltaInput);
   const atVariable = applyFunction(definition, variable);
   const atPoint = applyFunction(definition, point);
@@ -534,7 +534,7 @@ function inductionObligations(ce, expr, definitions, makeWitness) {
   if (!definition || !baseExpr) return null;
 
   const base = applyFunction(definition, baseExpr);
-  const variable = ce.box(makeWitness?.() ?? 'InductionWitness');
+  const variable = ce.box(makeWitness?.('index') ?? 'InductionWitness');
   const atVariable = applyFunction(definition, variable);
   const atSuccessor = applyFunction(definition, ce.box(['Add', variable, 1]));
   if (!base || !atVariable || !atSuccessor) return null;

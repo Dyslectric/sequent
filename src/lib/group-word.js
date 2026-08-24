@@ -193,12 +193,66 @@ const sameWord = (left, right) => (
  *   fragment this module parses — never as a way of avoiding an answer.
  */
 export function proveGroupEquation(latex, abelian = false) {
+  return decideGroupEquation(latex, abelian)?.value ?? null;
+}
+
+/**
+ * A reduced word as LaTeX, with the identity written `e`.
+ *
+ * Each generator is rendered before the letters are joined. Concatenating
+ * first would run internal names together — `Id0Id1` has no word boundary for
+ * the registry to find, and the internal names would reach the reader.
+ */
+function wordLatex(word, renderName) {
+  if (!word.length) return 'e';
+  return word
+    .map(({ name, inverse }) => (inverse ? `${renderName(name)}^{-1}` : renderName(name)))
+    .join('');
+}
+
+/** The same, for the abelian exponent-vector form: `x^{2}y^{-1}`. */
+function exponentsLatex(exponents, renderName) {
+  if (!exponents.length) return 'e';
+  return exponents
+    .map(([name, exponent]) => (
+      exponent === 1 ? renderName(name) : `${renderName(name)}^{${exponent}}`
+    ))
+    .join('');
+}
+
+/**
+ * Decide the equation and report the normal form that settled it.
+ *
+ * The verdict alone hides the whole argument: both sides reduce to one word,
+ * or they reduce to two different ones and the identity already fails in the
+ * free group. Returning the word lets a proof say which.
+ */
+export function decideGroupEquation(latex, abelian = false, renderName = (name) => name) {
   const sides = splitAtEquals(latex);
   if (!sides) return null;
   const left = parseWord(sides.left);
   const right = parseWord(sides.right);
   if (left === null || right === null) return null;
 
-  if (!abelian) return sameWord(freelyReduce(left), freelyReduce(right));
-  return JSON.stringify(abelianNormalForm(left)) === JSON.stringify(abelianNormalForm(right));
+  if (!abelian) {
+    const reducedLeft = freelyReduce(left);
+    const reducedRight = freelyReduce(right);
+    const value = sameWord(reducedLeft, reducedRight);
+    return {
+      value,
+      normalFormLatex: value ? wordLatex(reducedLeft, renderName) : null,
+      leftLatex: wordLatex(reducedLeft, renderName),
+      rightLatex: wordLatex(reducedRight, renderName),
+    };
+  }
+
+  const reducedLeft = abelianNormalForm(left);
+  const reducedRight = abelianNormalForm(right);
+  const value = JSON.stringify(reducedLeft) === JSON.stringify(reducedRight);
+  return {
+    value,
+    normalFormLatex: value ? exponentsLatex(reducedLeft, renderName) : null,
+    leftLatex: exponentsLatex(reducedLeft, renderName),
+    rightLatex: exponentsLatex(reducedRight, renderName),
+  };
 }

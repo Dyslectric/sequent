@@ -6,6 +6,7 @@ const EQUALITY_TOKENS = ['='];
 const INEQUALITY_TOKENS = ['\\leq', '\\geq', '\\le', '\\ge', '\\lt', '\\gt', '<', '>'];
 const NON_ORDER_RELATION_TOKENS = ['\\neq', '\\ne'];
 const QUANTIFIER_TOKENS = ['\\forall', '\\exists'];
+const PROOF_TOKEN = '\\vdash';
 const OPEN_VISUAL_DELIMITERS = [
   '\\lbrace', '\\lbrack', '\\lparen', '\\lvert', '\\lVert', '\\lfloor', '\\lceil', '\\{',
 ];
@@ -228,6 +229,16 @@ export function splitTopLevelQuantifierScope(latex) {
   return { scope, clauses, body };
 }
 
+/** Keep a sequent's assumptions attached to every conclusion checkpoint. */
+function splitTopLevelProofScope(latex) {
+  const at = indexOfTopLevel(latex, PROOF_TOKEN);
+  if (at < 0) return { scope: '', body: latex };
+  const assumptions = latex.slice(0, at).trim();
+  const conclusion = latex.slice(at + PROOF_TOKEN.length).trim();
+  if (!assumptions || !conclusion) return { scope: '', body: latex };
+  return { scope: `${assumptions}${PROOF_TOKEN} `, body: conclusion };
+}
+
 function makeChain(logical, kind, parts, operators, scope = '') {
   if (operators.length < 2 || parts.slice(0, -1).some((part) => part.length === 0)) return null;
 
@@ -331,7 +342,10 @@ export function flattenTopLevelChain(latex) {
  */
 export function getTopLevelChainCheckpoints(latex) {
   const logical = flattenTopLevelChain(latex).trim();
-  const { scope, body } = splitTopLevelQuantifierScope(logical);
+  const quantified = splitTopLevelQuantifierScope(logical);
+  const proof = splitTopLevelProofScope(quantified.body);
+  const scope = `${quantified.scope}${proof.scope}`;
+  const body = proof.body;
   for (const token of LOGICAL_CHAIN_TOKENS) {
     const other = LOGICAL_CHAIN_TOKENS.find((candidate) => candidate !== token);
     const parts = splitTopLevel(body, token, { keepEmpty: true });

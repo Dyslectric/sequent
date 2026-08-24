@@ -283,6 +283,134 @@ body {
   font-weight: 600;
 }
 
+/* ---------- the theorem panel ---------- */
+
+.theorem-panel {
+  flex: none;
+  scrollbar-gutter: stable both-edges;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+}
+
+.theorem-panel[hidden] { display: none; }
+
+.theorem-panel-inner {
+  max-width: var(--content-width);
+  margin-inline: auto;
+  padding: 12px var(--row-gutter) 12px;
+}
+
+.theorem-panel-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.theorem-panel-title {
+  margin: 0;
+  font-size: 15px;
+  line-height: 1.25;
+  letter-spacing: -0.01em;
+}
+
+.theorem-panel-note {
+  margin: 3px 0 10px;
+  max-width: 62ch;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.theorem-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 6px;
+  /* The sheet is what the reader came for, so the list scrolls rather than
+     pushing it off the screen. */
+  max-height: 34vh;
+  overflow-y: auto;
+  overscroll-behavior-block: contain;
+  scrollbar-width: thin;
+}
+
+.theorem-option {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+  padding: 7px 9px;
+  cursor: pointer;
+}
+
+.theorem-option:hover { background: var(--surface-hover); }
+
+.theorem-option input {
+  margin: 2px 0 0;
+  accent-color: var(--accent);
+  flex: none;
+}
+
+.theorem-option-body { min-width: 0; }
+
+.theorem-option-head {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+
+.theorem-option-title {
+  font-size: 12px;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.theorem-option-kind {
+  color: var(--faint);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  flex: none;
+}
+
+.theorem-option-cost,
+.theorem-option-usage {
+  display: block;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.35;
+}
+
+.theorem-option-usage {
+  margin-top: 2px;
+  color: var(--faint);
+  font-variant-numeric: tabular-nums;
+}
+
+/* A withheld theorem is still listed, and reads as switched off rather than
+   as missing: the point of the list is that a refusal is visible. */
+.theorem-option.is-withheld {
+  border-style: dashed;
+  background: transparent;
+}
+
+.theorem-option.is-withheld .theorem-option-title { color: var(--muted); }
+
+.theorem-option.is-withheld .theorem-option-usage {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.icon-button.is-active {
+  border-color: color-mix(in srgb, var(--accent) 55%, var(--border));
+  color: var(--accent);
+}
+
 /* ---------- sheet ---------- */
 
 .sheet-scroll {
@@ -305,7 +433,8 @@ body {
   padding-inline: var(--gutter-fallback);
 }
 
-.no-scrollbar-gutter .demo-browser {
+.no-scrollbar-gutter .demo-browser,
+.no-scrollbar-gutter .theorem-panel {
   padding-inline: var(--gutter-fallback);
 }
 

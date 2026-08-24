@@ -20,6 +20,7 @@ import { parseSheetStateHash, serializeSheetState } from './lib/url-state.js';
 import { DEFAULT_DEMO_ID, DEMOS, demoById } from './lib/demos.js';
 import { isSummarized, ruleLabel } from './lib/proof-trace.js';
 import { stepTrustLabel, trustSummary } from './lib/kernel.js';
+import { APPEAL_LIST, SAMPLING } from './lib/permissions.js';
 
 // Fonts arrive through `mathlive/static.css`, which Vite bundles; stop MathLive
 // from also fetching them (and its sounds) at runtime.
@@ -32,7 +33,6 @@ const LEGACY_STORAGE_PREFIX = 'expression-calculator/v2';
 
 const sheetEl = document.getElementById('sheet');
 const dockEl = document.getElementById('keyboard-dock');
-const engine = new Sheet();
 
 const state = {
   page: 'sheet',
@@ -41,7 +41,22 @@ const state = {
   display: 'exact',
   theme: 'light',
   keyboardCollapsed: false,
+  // Appeals the reader has withheld, and whether the list of them is showing.
+  // Deliberately not persisted: a sheet reopened weeks later should not be
+  // quietly proving less than it can, and a shared link least of all.
+  withheld: new Set(),
+  theoremsOpen: false,
 };
+
+/**
+ * The engine is rebuilt rather than reconfigured, because a permission set is
+ * decided once at construction and consulted by every branch below it.
+ */
+function sheetOptions() {
+  return { permissions: Object.fromEntries([...state.withheld].map((id) => [id, false])) };
+}
+
+let engine = new Sheet(sheetOptions());
 
 /** One entry per visible line. */
 const rows = [];
@@ -766,7 +781,7 @@ function recompute() {
     if (chain) {
       const checkpointResults = chain.checkpoints.map((checkpoint) => {
         if (!checkpoint) return null;
-        const checkpointEngine = new Sheet();
+        const checkpointEngine = new Sheet(sheetOptions());
         checkpointEngine.evaluateAll(state.lines.slice(0, index));
         try {
           return checkpointEngine.evaluateLine(checkpoint, { allowDefinitions: false });
@@ -782,6 +797,8 @@ function recompute() {
       renderProof(entry, result);
     }
   });
+  recordAppealUsage(results);
+  renderTheoremPanel();
   save();
 }
 
@@ -833,6 +850,72 @@ function renderDemoBrowser() {
       selected.offsetLeft - list.offsetLeft - (list.clientWidth - selected.clientWidth) / 2,
     );
   }
+}
+
+/**
+ * How many rows of the last full evaluation lean on each appeal.
+ *
+ * The catalogue is the same for every sheet; what a *reader* wants to know is
+ * which of them this sheet is actually standing on, which is the difference
+ * between a settings screen and a list of what a proof rests on.
+ */
+const appealUsage = new Map();
+const APPEAL_IDS = new Set(APPEAL_LIST.map((appeal) => appeal.id));
+
+function recordAppealUsage(results) {
+  appealUsage.clear();
+  const bump = (id) => appealUsage.set(id, (appealUsage.get(id) ?? 0) + 1);
+  for (const result of results) {
+    // A sampled row rests on the search entirely, and says so by having no
+    // trace at all; every other appeal is named by a step of one.
+    if (result?.method === 'sampled') bump(SAMPLING);
+    for (const rule of new Set((result?.proof?.steps ?? []).map((step) => step.rule))) {
+      if (APPEAL_IDS.has(rule)) bump(rule);
+    }
+  }
+}
+
+function usageNote(appeal) {
+  if (state.withheld.has(appeal.id)) return 'withheld';
+  const used = appealUsage.get(appeal.id) ?? 0;
+  if (!used) return 'nothing here needs it';
+  return used === 1 ? '1 row rests on it' : `${used} rows rest on it`;
+}
+
+function renderTheoremPanel() {
+  const toggle = document.getElementById('theorems-toggle');
+  toggle.setAttribute('aria-expanded', String(state.theoremsOpen));
+  toggle.classList.toggle('is-active', state.withheld.size > 0);
+  const panel = document.getElementById('theorem-panel');
+  panel.hidden = !state.theoremsOpen;
+  if (!state.theoremsOpen) return;
+
+  document.getElementById('theorems-restore').hidden = state.withheld.size === 0;
+  const list = document.getElementById('theorem-list');
+  // Rebuilding the list on every keystroke would otherwise cost the reader the
+  // checkbox they are on.
+  const focused = document.activeElement?.dataset?.appeal;
+  list.innerHTML = APPEAL_LIST.map((appeal) => {
+    const withheld = state.withheld.has(appeal.id);
+    return `<label class="theorem-option${withheld ? ' is-withheld' : ''}">`
+      + `<input type="checkbox" data-appeal="${escapeHtml(appeal.id)}"${withheld ? '' : ' checked'}`
+      + ` aria-label="Permit ${escapeHtml(appeal.title)}" />`
+      + '<span class="theorem-option-body">'
+      + '<span class="theorem-option-head">'
+      + `<span class="theorem-option-title">${escapeHtml(appeal.title)}</span>`
+      + `<span class="theorem-option-kind">${escapeHtml(appeal.kind)}</span>`
+      + '</span>'
+      + `<span class="theorem-option-cost">${escapeHtml(appeal.cost)}</span>`
+      + `<span class="theorem-option-usage">${escapeHtml(usageNote(appeal))}</span>`
+      + '</span></label>';
+  }).join('');
+  if (focused) list.querySelector(`[data-appeal="${focused}"]`)?.focus();
+}
+
+/** Rebuild the engine under the current permissions and re-run every line. */
+function applyPermissions() {
+  engine = new Sheet(sheetOptions());
+  recompute();
 }
 
 function renderPageChrome() {
@@ -927,6 +1010,26 @@ function init() {
     keyboardController?.setCollapsed(state.keyboardCollapsed);
     renderKeyboardToggle(keyboardToggle);
     focusPageEntry();
+  });
+
+  const theoremsToggle = document.getElementById('theorems-toggle');
+  theoremsToggle.addEventListener('click', () => {
+    state.theoremsOpen = !state.theoremsOpen;
+    renderTheoremPanel();
+  });
+
+  document.getElementById('theorem-list').addEventListener('change', (event) => {
+    const id = event.target?.dataset?.appeal;
+    if (!id) return;
+    if (event.target.checked) state.withheld.delete(id);
+    else state.withheld.add(id);
+    applyPermissions();
+  });
+
+  document.getElementById('theorems-restore').addEventListener('click', () => {
+    if (!state.withheld.size) return;
+    state.withheld.clear();
+    applyPermissions();
   });
 
   document.getElementById('theme-toggle').addEventListener('click', () => {

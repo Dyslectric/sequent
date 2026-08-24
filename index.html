@@ -27,6 +27,14 @@
           <button type="button" id="export-sheet" class="icon-button" title="Save this sheet to a file">Export</button>
           <button type="button" id="import-sheet" class="icon-button" title="Replace this sheet from a file">Import</button>
           <input type="file" id="import-file" accept="application/json,.json" hidden />
+          <button
+            type="button"
+            id="theorems-toggle"
+            class="icon-button"
+            title="What this sheet may appeal to"
+            aria-controls="theorem-panel"
+            aria-expanded="false"
+          >Theorems</button>
           <button type="button" id="clear-sheet" class="icon-button" title="Clear the sheet">Clear</button>
           <button type="button" id="theme-toggle" class="icon-button" title="Switch theme" aria-label="Switch theme">
             <span class="theme-icon"></span>
@@ -50,6 +58,23 @@
           </div>
         </div>
         <nav id="demo-list" class="demo-list" aria-label="Proof demonstrations"></nav>
+      </div>
+    </section>
+
+    <section id="theorem-panel" class="theorem-panel" aria-labelledby="theorem-panel-title" hidden>
+      <div class="theorem-panel-inner">
+        <div class="theorem-panel-heading">
+          <div>
+            <h2 id="theorem-panel-title" class="theorem-panel-title">What this sheet may appeal to</h2>
+            <p class="theorem-panel-note">
+              Withholding one re-runs every line without it. A statement that
+              cannot be proved from what is left comes back
+              <em>undecided</em> &mdash; never false.
+            </p>
+          </div>
+          <button type="button" id="theorems-restore" class="icon-button" hidden>Permit all</button>
+        </div>
+        <div id="theorem-list" class="theorem-list"></div>
       </div>
     </section>
 

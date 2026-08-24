@@ -51,6 +51,9 @@ const APPEALS = [
   {
     id: 'engine.exact-evaluation',
     title: "Compute Engine's exact evaluation",
+    // The one kind the registry deliberately does not carry: an oracle is not
+    // a species of support, it is the absence of any. See `ruleRests`.
+    kind: 'oracle',
     cost: 'Everything only the CAS can settle: the transcendental identities, the closed forms, the limits.',
   },
   {

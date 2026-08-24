@@ -1,7 +1,7 @@
 # Beyond the oracle
 
-Status: phase 0, Tier 1 and phase 2 implemented, phase 1 partly; phases 3-5
-proposed
+Status: phase 0, Tier 1 and phase 2 implemented, phase 1 all but "prove that
+one too"; phases 3-5 proposed
 
 This plan begins where `docs/proof-kernel.md` stops. That plan closes with a
 sentence — `engine.exact-evaluation` "never becomes verified" — and the
@@ -578,9 +578,27 @@ The monotonicity test now withholds every appeal in turn against the whole demo
 catalogue *and* a sweep of twenty lines outside it, which is where the
 derivative had to be caught.
 
-**Still to do:** the sidebar that lists the appeals with toggles, and "prove
-that one too". Both are UI work resting on the catalogue and the
-classification, which is why those came first.
+**The list of them is in the app.** **Theorems** in the header opens a panel
+over the sheet: every appeal, what withholding it costs, how many rows of the
+*current* sheet rest on it, and a checkbox. Unticking one rebuilds the engine
+under the smaller set and re-runs every line, so the consequence is visible on
+the rows themselves rather than described.
+
+Two decisions in it are worth recording. The usage count is what turns a
+settings screen into a list of what a proof rests on — "6 rows rest on it"
+against the finite exhaustion, on the ℤ/4ℤ demo, is the sentence the whole
+plan is for. And the withheld set is deliberately *not* persisted: a sheet
+reopened next week should not be quietly proving less than it can, and a shared
+link least of all.
+
+The sidebar it asks for is a panel rather than a sidebar, because this
+application is one column wide by design and a column of theorems beside a
+column of rows would halve the thing the reader came for.
+
+**Still to do in this phase:** "prove that one too" — selecting an admitted
+theorem and spawning a goal row for it. That needs row-to-row citation
+(`docs/proof-traces.md` phase 6) to be worth anything, because a theorem proved
+in one row has to be usable in another.
 
 ### The original plan
 

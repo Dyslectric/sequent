@@ -95,13 +95,14 @@ proved and checked by one divisor. A checker that factored would be a prover
 running on every keystroke, which is why this rule takes a witness where the
 rest of the arithmetic takes none.
 
-A sheet can also be asked to do without. `new Sheet({ permissions: {
-'polynomial.sturm-sign-chart': false } })` withholds an appeal, and every
-branch consults the set before it runs, so what cannot be proved from what is
-left comes back *undecided* — never false. The catalogue is
-`src/lib/permissions.js`: ten entries today, from Compute Engine's exact
-evaluation through the finite exhaustions to the numeric search itself, each
-listed only because some branch actually asks about it.
+A sheet can also be asked to do without. **Theorems** in the header lists
+everything this sheet may appeal to — ten entries today, from Compute Engine's
+exact evaluation through the finite exhaustions to the numeric search itself —
+with how many rows currently rest on each, and a checkbox. Unticking one
+re-runs every line without it, and what cannot be proved from what is left
+comes back *undecided*, never false. The catalogue is
+`src/lib/permissions.js`, and an entry is listed only because some branch
+actually asks about it.
 
 What a withheld theorem reveals is often more interesting than the proof it
 costs, because the row that survives names the *second-choice* procedure.

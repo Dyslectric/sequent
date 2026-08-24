@@ -42,7 +42,7 @@
  * exact normalization.
  */
 
-import { isSummarized } from './proof-trace.js';
+import { isSummarized, ruleRests } from './proof-trace.js';
 import {
   ONE,
   ZERO,
@@ -2070,6 +2070,126 @@ export const CHECKED_RULES = Object.freeze([...CHECKERS.keys()]);
 
 /* ------------------------------ checking a trace ------------------------------ */
 
+/* ------------------------------ definitions ------------------------------ */
+
+/**
+ * Definitions, made into something the kernel can rewrite with.
+ *
+ * A `definition.unfold` step states a stipulation: `\text{gapIdentity}(a, b)
+ * \iff a^2+b^2-2ab=(a-b)^2`, or `d(\epsilon) = \frac{\epsilon}{2}`. The kernel
+ * cannot *prove* a definition — nothing follows from a name being chosen — so
+ * the step stays admitted whatever happens here.
+ *
+ * What it can do is **use** one, and until it did, a definition was a wall.
+ * `\forall x\in\mathbb{R},\text{squareExpansion}(x)` is a universal
+ * generalization of a premise about `(x+1)^2=x^2+2x+1`, and the checker could
+ * not see that those were the same claim, so eleven steps across the catalogue
+ * abstained with *premises not matched* while resting on perfectly good
+ * derivations. Unfolding first is what closes that.
+ *
+ * Substituting a stipulated equivalence is sound, and this is the one place
+ * the kernel rewrites a step before checking it. What it may not do is make a
+ * step *look* like an instance of a rule it is not: the rewrite is applied to
+ * the premises and the conclusion alike, so a checker still has to find the
+ * same inference between them.
+ */
+function collectUnfoldings(steps) {
+  const out = [];
+  for (const step of steps) {
+    if (step.rule !== 'definition.unfold' || isSummarized(step)) continue;
+    const unfolding = readUnfolding(step.conclusionLatex);
+    if (unfolding) out.push(unfolding);
+  }
+  return out;
+}
+
+/** `name(p, q) \iff body` or `name(p) = body`, as a rewrite. */
+function readUnfolding(latex) {
+  if (typeof latex !== 'string' || !latex) return null;
+  const tokens = normalize(tokenize(latex));
+  const at = topLevel(tokens, new Set(['\\iff']));
+  const split = at?.length === 1 ? at[0] : null;
+  const equals = split === null ? topLevel(tokens, new Set(['='])) : null;
+  const position = split ?? (equals?.length === 1 ? equals[0] : null);
+  if (position === null) return null;
+
+  const head = tokens.slice(0, position);
+  const body = tokens.slice(position + 1);
+  if (!head.length || !body.length) return null;
+
+  // The left side is an application: everything before `(` names the
+  // definition, and the arguments are its parameters.
+  const open = head.indexOf('(');
+  if (open <= 0 || matchingBrace(head, open) !== head.length - 1) return null;
+  const argumentTokens = head.slice(open + 1, head.length - 1);
+  const commas = topLevel(argumentTokens, new Set([',']));
+  if (!commas) return null;
+  const parameters = splitAt(argumentTokens, commas).map((part) => part.join(''));
+  // A parameter has to be one name, or substituting it is guesswork.
+  if (parameters.some((parameter) => !parameter || !/^\\?[a-zA-Z]+$/.test(parameter))) return null;
+
+  return {
+    name: head.slice(0, open),
+    parameters,
+    // A propositional body is parenthesized so that splicing it under a
+    // connective cannot change what binds to what.
+    body: split === null ? body : wrap(body),
+  };
+}
+
+/** Every occurrence of the definition replaced by its body, arguments in place. */
+function applyUnfolding(tokens, unfolding) {
+  const { name, parameters, body } = unfolding;
+  const out = [];
+  for (let at = 0; at < tokens.length;) {
+    const matches = name.every((token, offset) => tokens[at + offset] === token);
+    if (!matches || tokens[at + name.length] !== '(') {
+      out.push(tokens[at]);
+      at += 1;
+      continue;
+    }
+    const open = at + name.length;
+    const end = matchingBrace(tokens, open);
+    if (end < 0) {
+      out.push(tokens[at]);
+      at += 1;
+      continue;
+    }
+    const argumentTokens = tokens.slice(open + 1, end);
+    const commas = topLevel(argumentTokens, new Set([',']));
+    const args = commas ? splitAt(argumentTokens, commas) : null;
+    if (!args || args.length !== parameters.length) {
+      out.push(tokens[at]);
+      at += 1;
+      continue;
+    }
+    const bound = new Map(parameters.map((parameter, index) => [parameter, wrap(args[index])]));
+    out.push(...body.flatMap((token) => bound.get(token) ?? [token]));
+    at = end + 1;
+  }
+  return out;
+}
+
+/** The proposition with every known definition unfolded, or null if none was. */
+function unfolded(latex, unfoldings) {
+  if (!unfoldings.length || typeof latex !== 'string') return null;
+  let tokens = normalize(tokenize(latex));
+  let changed = false;
+  for (const unfolding of unfoldings) {
+    const next = applyUnfolding(tokens, unfolding);
+    if (next.length !== tokens.length || next.some((token, at) => token !== tokens[at])) {
+      tokens = next;
+      changed = true;
+    }
+  }
+  if (!changed) return null;
+  try {
+    return parse(tokens);
+  } catch {
+    return null;
+  }
+}
+
 /**
  * Check one step against its premises.
  *
@@ -2091,23 +2211,45 @@ function checkStep(step, byId, context) {
     if (parsed) premises.push(parsed);
   }
 
-  let verdict;
-  try {
-    verdict = checker(conclusion, premises, step, context);
-  } catch {
-    verdict = UNKNOWN;
+  const run = (claim, supports) => {
+    try {
+      return checker(claim, supports, step, context);
+    } catch {
+      return UNKNOWN;
+    }
+  };
+  let verdict = run(conclusion, premises);
+
+  // A step whose statement still wears a defined name does not look like the
+  // rule that proved it — `\text{both}(x)` is a conjunction only once
+  // unfolded. Where the trace states the definitions, the kernel now unfolds
+  // them and looks again, on both sides of the inference at once: the same
+  // rewrite is applied to the conclusion and to every premise, so a checker
+  // still has to find the same inference between them.
+  if (verdict !== CHECKED && context.unfoldings?.length && step.rule !== 'definition.unfold') {
+    const claim = unfolded(step.conclusionLatex, context.unfoldings);
+    if (claim) {
+      const supports = (step.premises ?? []).map((id) => {
+        const latex = byId.get(id)?.conclusionLatex ?? '';
+        return unfolded(latex, context.unfoldings) ?? parseProposition(latex);
+      }).filter(Boolean);
+      const second = run(claim, supports);
+      // Only ever an improvement. A rewrite that turns an abstention into a
+      // refusal is the kernel confusing itself with the proof, and the earlier
+      // verdict — which read the step as the reader wrote it — stands.
+      if (second === CHECKED) verdict = CHECKED;
+    }
   }
+
   if (verdict === CHECKED) {
     return {
       trust: CERTIFICATE_CHECKERS.has(step.rule) ? 'certified' : 'verified',
       note: null,
     };
   }
-  // A step whose statement still wears a defined name may not look like the
-  // rule that proved it: `\text{both}(x)` is a conjunction only once unfolded,
-  // and unfolding is a phase-two checker. Where the trace unfolded something,
-  // a shape the kernel does not recognise is its own ignorance, not a fault in
-  // the proof, and it abstains instead of refusing.
+  // Unfolding is a rewrite the kernel performs, not one it can vouch for, so
+  // a shape it still does not recognise below a definition is its own
+  // ignorance rather than a fault in the proof, and it abstains.
   if (verdict === REFUSED && !context.dependsOnRule(step.id, 'definition.unfold')) {
     return { trust: 'rejected', note: `not an instance of ${step.rule}` };
   }
@@ -2126,8 +2268,10 @@ export function checkTrace(trace) {
     return { trust: 'rejected', steps, admitted: [], rejected: [] };
   }
   const byId = new Map(trace.steps.map((step) => [step.id, step]));
+  const unfoldings = collectUnfoldings(trace.steps);
 
   const context = {
+    unfoldings,
     /** Whether `id` rests, anywhere below it, on a step citing `ruleId`. */
     dependsOnRule(id, ruleId) {
       const seen = new Set();
@@ -2195,12 +2339,36 @@ export function trustSummary(trace) {
   const admitted = trace?.admitted ?? [];
   // Defensive fallback for a hand-built or older trace with no inventory.
   if (!admitted.length) return 'checked';
-  const oracles = admitted.filter((id) => baseTrust(id) === 'oracle').length;
-  const theorems = admitted.length - oracles;
-  const counted = theorems === 1 ? '1 theorem' : `${theorems} theorems`;
-  if (!theorems) return "the CAS's word";
-  if (!oracles) return `resting on ${counted}`;
-  return `resting on ${counted} and the CAS`;
+
+  const oracles = admitted.filter((id) => baseTrust(id) === 'oracle');
+  const rest = admitted.filter((id) => baseTrust(id) !== 'oracle');
+  const theorems = [...new Set(rest
+    .filter((id) => ruleRests(id).kind === 'theorem')
+    .map((id) => ruleRests(id).theorem))];
+  const definitions = rest.filter((id) => ruleRests(id).kind === 'definition').length;
+  const unaudited = rest.length - theorems.length - definitions;
+
+  // Resting on the oracle and nothing else is its own sentence: there is no
+  // support to enumerate, which is the whole point of saying it this way.
+  if (oracles.length && !rest.length) return "the CAS's word";
+
+  const parts = [];
+  // One theorem is worth naming; several would crowd the row, and the panel
+  // below lists them anyway.
+  if (theorems.length === 1) parts.push(theorems[0]);
+  else if (theorems.length) parts.push(`${theorems.length} theorems`);
+  if (unaudited) parts.push(unaudited === 1 ? '1 unchecked step' : `${unaudited} unchecked steps`);
+  if (oracles.length) parts.push('the CAS');
+
+  // A definition is the reader's own stipulation, so it is not something the
+  // row *rests* on in the sense the rest of this list means. Saying so only
+  // when there is nothing else keeps the summary from calling a naming a
+  // theorem, which is what it used to do.
+  if (!parts.length) return definitions ? 'resting on its definitions' : 'checked';
+  const listed = parts.length === 1
+    ? parts[0]
+    : `${parts.slice(0, -1).join(', ')} and ${parts.at(-1)}`;
+  return `resting on ${listed}`;
 }
 
 /** How a step's own trust reads in the proof panel. */

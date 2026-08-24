@@ -783,16 +783,47 @@ check('every demo trace carries a trust level on every step', () => {
   return null;
 });
 
-check('a rule whose conclusion is still folded up is admitted, not refused', () => {
+check('a rule whose conclusion is folded up is unfolded and then checked', () => {
   // `P(x,y)` is a conjunction only once its definition is unfolded, so the
-  // conjunction introduction that proved it does not look like one. Unfolding
-  // is not a checker the kernel has yet, and mistaking that for a bad step
-  // would throw away a perfectly good proof.
+  // conjunction introduction that proved it does not look like one. The trace
+  // states the definition, so the kernel now unfolds it and looks again —
+  // which is the whole point of a definition being a *use* rather than a wall.
   const row = new Sheet().evaluateAll(['P(x,y):=x^2\\ge 0\\wedge y^2\\ge 0', 'P(x,y)']).at(-1);
   if (row.proofStatus !== 'available') return 'the row lost its proof';
   const root = row.proof.steps.find((step) => step.id === row.proof.root);
   if (root.rule !== 'logic.and-intro') return `the root is ${root.rule}`;
-  return root.trust === 'axiom' ? null : `the folded conclusion was ${root.trust}`;
+  return root.trust === 'verified' ? null : `the folded conclusion was ${root.trust}`;
+});
+
+/**
+ * What a row rests on is four different things, and it used to be one word.
+ *
+ * "Resting on 2 theorems" was the summary whether those two were Sturm's
+ * theorem or the reader's own two definitions. A definition is a stipulation,
+ * a finite exhaustion is an unaudited calculation, and neither is a theorem.
+ */
+check('a definition is not counted as a theorem the row rests on', () => {
+  const built = certify(trace(
+    { id: 's1', rule: 'definition.unfold', conclusionLatex: '\\text{sq}(x)\\iff 0\\le x^2' },
+    { id: 's2', rule: 'logic.tautology', premises: ['s1'], conclusionLatex: 'A\\vee\\neg A' },
+  ));
+  const summary = trustSummary(built);
+  if (/theorem/.test(summary)) return `called a definition a theorem: ${summary}`;
+  return summary === 'resting on its definitions' ? null : `summary reads ${summary}`;
+});
+
+check('a named theorem is named, and an enumeration is not called one', () => {
+  const sturm = new Sheet().evaluateAll(['\\forall x\\in\\mathbb{R},x^2\\ge 0']).at(-1);
+  if (!trustSummary(sturm.proof).includes("Sturm's theorem")) {
+    return `Sturm went unnamed: ${trustSummary(sturm.proof)}`;
+  }
+  const group = new Sheet().evaluateAll([
+    'G:=\\{0,1,2,3\\}', 'm(a,b):=\\operatorname{mod}(a+b,4)', '\\mathsf{Grp}(G,m,0)',
+  ]).at(-1);
+  const summary = trustSummary(group.proof);
+  // The engine enumerated a carrier and the kernel did not re-run it. That is
+  // an unaudited calculation, not an appeal to a result.
+  return /theorem/.test(summary) ? `an enumeration was called a theorem: ${summary}` : null;
 });
 
 /**

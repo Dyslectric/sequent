@@ -124,6 +124,7 @@ const RULES = {
     explanation: 'The premise never holds, so the implication holds without saying anything.',
   },
   'definition.unfold': {
+    rests: { kind: 'definition' },
     category: 'rewrite',
     label: 'unfold definition',
     explanation: 'A defined name replaced by the expression it stands for.',
@@ -159,6 +160,7 @@ const RULES = {
     explanation: 'The difference of the two sides expands to the zero polynomial.',
   },
   'polynomial.sturm-sign-chart': {
+    rests: { kind: 'theorem', theorem: "Sturm's theorem" },
     category: 'certificate',
     label: 'Sturm sign chart',
     explanation: 'The exact real roots partition the line, and the sign is constant between them.',
@@ -169,6 +171,7 @@ const RULES = {
     explanation: 'Every term is an even power or an absolute value, so the sum cannot be negative.',
   },
   'polynomial.discriminant': {
+    rests: { kind: 'theorem', theorem: 'the discriminant test for real roots' },
     category: 'certificate',
     label: 'negative discriminant',
     explanation: 'A quadratic with no real root never crosses zero, so it keeps its leading sign.',
@@ -178,6 +181,7 @@ const RULES = {
   // shift, substitution — and reports which domain it used but not which
   // technique. `data.domain` carries what is actually known.
   'polynomial.domain-sign': {
+    rests: { kind: 'computation' },
     category: 'certificate',
     label: 'sign on the assumed domain',
     explanation: 'The premise confines the variable to a domain, and the conclusion keeps its sign throughout.',
@@ -193,36 +197,43 @@ const RULES = {
     explanation: 'The quadratic form has no negative direction, so it is non-negative everywhere.',
   },
   'set.extensionality': {
+    rests: { kind: 'theorem', theorem: 'extensionality' },
     category: 'rewrite',
     label: 'set extensionality',
     explanation: 'Two sets are equal exactly when they have the same members.',
   },
   'set.finite-enumeration': {
+    rests: { kind: 'computation' },
     category: 'certificate',
     label: 'finite enumeration',
     explanation: 'The domain is finite and every member was checked.',
   },
   'analysis.induction': {
+    rests: { kind: 'theorem', theorem: 'the principle of mathematical induction' },
     category: 'certificate',
     label: 'induction certificate',
     explanation: 'The base case holds and the step carries it to every successor.',
   },
   'calculus.continuity': {
+    rests: { kind: 'theorem', theorem: 'the fundamental theorem of calculus' },
     category: 'certificate',
     label: 'proper on the interval',
     explanation: 'The limits are finite and the integrand has no singularity between them.',
   },
   'analysis.epsilon-delta-witness': {
+    rests: { kind: 'computation' },
     category: 'certificate',
     label: 'epsilon-delta witness',
     explanation: 'An explicit witness was produced and verified for every epsilon.',
   },
   'topology.constructor-certificate': {
+    rests: { kind: 'computation' },
     category: 'certificate',
     label: 'topology constructor certificate',
     explanation: 'The topology axioms were verified against the constructed family.',
   },
   'algebra.finite-exhaustion': {
+    rests: { kind: 'computation' },
     category: 'certificate',
     label: 'finite exhaustive verification',
     explanation: 'Every assignment over the finite carrier was checked.',
@@ -274,6 +285,29 @@ export function isRule(id) {
 /** Display copy for a rule. Unknown IDs fall back to the raw ID, never to a guess. */
 export function ruleLabel(id) {
   return RULES[id]?.label ?? id;
+}
+
+/**
+ * What an *admitted* instance of a rule rests on, which is not one thing.
+ *
+ * "Resting on 2 theorems" was the row's summary whether those two were Sturm's
+ * theorem or the reader's own two definitions, and those are not remotely the
+ * same claim. Four kinds, and the distinction between them is most of what a
+ * trust summary is worth:
+ *
+ * - `definition` — the reader stipulated it. Not believed on anyone's
+ *   authority, not a gap, and nothing that could ever be proved.
+ * - `theorem` — a named mathematical result the prover appealed to and the
+ *   kernel did not re-derive. Believed, nameable, provable elsewhere.
+ * - `computation` — the engine ran an exhaustive check and the kernel did not
+ *   re-run it. Not a theorem; an unaudited calculation.
+ * - `unchecked` — the default: an inference no checker recognised.
+ *
+ * The oracle is deliberately absent. It is not a *kind* of support, it is the
+ * absence of any, and `kernel.js` reports it separately for that reason.
+ */
+export function ruleRests(id) {
+  return RULES[id]?.rests ?? { kind: 'unchecked' };
 }
 
 export function ruleCategory(id) {

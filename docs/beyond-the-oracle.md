@@ -48,12 +48,19 @@ The 59 unchecked steps cluster hard, and the clusters are the work list:
 | 2 | `analysis.epsilon-delta-witness` | no checker |
 | 1 | `analysis.induction` | no checker |
 
-The two abstaining rows are the interesting ones. Both have working checkers;
-both abstain because the conclusion still wears a defined name. **Sixteen of
-the fifty-nine steps are blocked behind `definition.unfold` alone**, and
-`definition.unfold` is not waiting for a checker — it is waiting for phase 4,
-where a definition becomes something the kernel may rewrite with rather than
-something it is told.
+The two abstaining rows are the interesting ones. Both have working checkers,
+and the claim that both abstained *for the same reason* was wrong — worth
+recording, because it was wrong in a way that overstated what one fix would
+buy.
+
+`logic.universal-generalization` did abstain on a defined name, and phase 1
+cleared six of its eleven by teaching the kernel to unfold before checking.
+The remaining five, and all five `relation.normalize` steps, are the
+complex-analysis demo, where the premise says `\Re(\exp((i)t))` and the
+conclusion says `\operatorname{Re}(e^{it})`. That is one claim in two
+notations, and no amount of definition-unfolding closes it — it needs the
+normalizer that `docs/proof-kernel.md` sets aside for exponential and
+trigonometric forms, which is Tier 2.
 
 ### Two capability gaps found while probing
 
@@ -476,7 +483,40 @@ the kernel. The same goes for a perfect square asserted to be irrational.
 Everything the kernel cannot read arithmetically still abstains — `\pi > 3`
 leaves `\pi` an indeterminate and keeps the oracle it had.
 
-### Phase 1: citation, and the theorem library
+### Phase 1: citation, and the theorem library — **partly implemented**
+
+Two halves landed; two did not.
+
+**A definition is now something the kernel rewrites with.** A
+`definition.unfold` step states a stipulation — `\text{gapIdentity}(a, b)
+\iff a^2+b^2-2ab=(a-b)^2` — and the kernel collects those, unfolds them into
+a step it could not otherwise read, and checks it again. The rewrite is
+applied to the conclusion and to every premise at once, so a checker still has
+to find the same inference between them; and it may only ever turn an
+abstention into a check, never into a refusal, because a rewrite the kernel
+performed is not evidence about the proof. Six steps moved from admitted to
+checked, and `verified` steps across the catalogue went from 28 to 34.
+
+The unfold step itself stays admitted, and that is the design rather than a
+gap. Nothing follows from a name being chosen; a definition is not a theorem
+and cannot be proved.
+
+**What a row rests on is now four things rather than one word.** "Resting on 2
+theorems" was the summary whether those two were Sturm's theorem or the
+reader's own two definitions. The registry classifies each rule — `definition`
+for a stipulation, `theorem` for a named result the kernel did not re-derive,
+`computation` for an enumeration it did not re-run, `unchecked` otherwise —
+and the summary says which. `\mathsf{Grp}(G,m,0)` now reads *resting on 1
+unchecked step* rather than *resting on 1 theorem*, and
+`orall x\in\mathbb{R},x^2\ge0` names Sturm.
+
+**Still to do:** the permission set (generalising `allowSampling` /
+`allowDirectEvaluation` into a set of theorem ids each branch consults), the
+sidebar that lists them with toggles, and "prove that one too". Those are one
+piece of UI work resting on the classification above, which is why the
+classification came first.
+
+### The original plan
 
 `docs/proof-traces.md` phase 6 and `docs/proof-kernel.md` phase 4 are one
 piece of work: named lemmas as genuine theorem references, `definition.unfold`

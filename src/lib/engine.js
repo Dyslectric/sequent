@@ -335,7 +335,12 @@ function leftVectorOperand(latex, operatorAt) {
     }
   }
 
-  const symbol = /\\mathrm\s*\{\s*Id\d+\s*\}$/.exec(before);
+  // Keep an adjacent scalar factor with the vector at the right edge. Taking
+  // only the final name from `ta \times v` would rewrite `a \times v` and
+  // leave `t` immediately beside the resulting tuple; Compute Engine reads
+  // that shape as a function call. Parsing and evaluating the whole product
+  // also lets `parseVectorOperand()` discover that it is vector-valued.
+  const symbol = /(?:\\mathrm\s*\{\s*Id\d+\s*\}\s*)+$/.exec(before);
   return symbol
     ? { start: symbol.index, end, latex: symbol[0] }
     : null;
@@ -399,7 +404,19 @@ function vectorData(expr, definitions) {
 
 function parseVectorOperand(ce, operand, definitions) {
   try {
-    return vectorData(ce.parse(operand), definitions);
+    const parsed = ce.parse(operand);
+    const direct = vectorData(parsed, definitions);
+    if (direct) return direct;
+
+    // A vector-valued operand need not itself be a literal or a single named
+    // vector. In `a \times (b + tc)`, for example, the parenthesized operand
+    // becomes a tuple only after the definitions of `b` and `c` are applied.
+    // Compute Engine can perform that componentwise evaluation exactly, so use
+    // its result solely to discover the vector and its entries before lowering
+    // the infix product. Without this step the untouched `\times` reaches the
+    // parser as multiplication between points and becomes
+    // `no-product-between-points`.
+    return vectorData(parsed.evaluate(), definitions);
   } catch {
     return null;
   }

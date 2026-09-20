@@ -226,6 +226,13 @@ check('named column vectors have a cross product', [
   'w:=\\begin{pmatrix}0\\\\1\\\\0\\end{pmatrix}',
   'v\\times w',
 ], isValue('\\begin{pmatrix}0 \\\\ 0 \\\\ 1\\end{pmatrix}'));
+check('a vector-valued function can use a cross product of vector expressions', [
+  'a=(-2,4,-2)',
+  'b=(-3,5,2)',
+  'c=(-2,-1,3)',
+  'r(t)=ta\\times(b+tc)',
+  'r(1)',
+], isValue('(28,20,12)'));
 check('cross products preserve operand order', [
   '(0,1,0)\\times(1,0,0)',
 ], isValue('(0,0,-1)'));

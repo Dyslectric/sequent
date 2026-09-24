@@ -406,6 +406,24 @@ body {
   font-weight: 600;
 }
 
+/* The physics page lists its constants in the same cards, as buttons that
+   insert the constant rather than checkboxes that withhold it. */
+.physics-constant {
+  width: 100%;
+  text-align: left;
+  font: inherit;
+  color: inherit;
+}
+
+.physics-constant .theorem-option-kind {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex: 0 1 auto;
+}
+
+.physics-constants .math { color: var(--muted); }
+
 .icon-button.is-active {
   border-color: color-mix(in srgb, var(--accent) 55%, var(--border));
   color: var(--accent);

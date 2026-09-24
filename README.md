@@ -125,6 +125,34 @@ admitted; turning each into a checkable witness is the plan in
 [A proof kernel for Sequent](docs/proof-kernel.md), continued in
 [Beyond the oracle](docs/beyond-the-oracle.md).
 
+## Physics
+
+`physics.html` (the **Physics** link in the header) is a fork of the sheet for
+calculating with units. Every line is a number with a dimension: `m = 2\,\mathrm{kg}`
+defines a mass, `\frac{1}{2}mv^2` comes back in joules, `v \to \mathrm{km/h}`
+converts, and `5\,\mathrm{m} + 2\,\mathrm{s}` is refused rather than answered.
+A claim across units — `1\,\mathrm{km} = 1000\,\mathrm{m}`, `mgh > E_k` — is
+checked, with a dimension mismatch reported as such. Units are written upright
+(the keyboard's **units** tab types them); an italic `m` is a variable. The
+header chooses how many significant figures are shown, and equality is judged
+at that precision.
+
+It does not use Compute Engine's own units. That library drops the unit from
+`\frac{1}{3}\,\mathrm{km}`, rewrites the metre in `\mathrm{m/s}` when a sheet
+defines `m`, and leaves mismatched comparisons standing, so the fork parses
+unit groups itself (`src/lib/physics/units.js`), replaces each with an opaque
+placeholder before Compute Engine reads the line, and evaluates over pairs of
+SI value and dimension vector (`src/lib/physics/engine.js`). Values are IEEE
+doubles: this page measures, the main one proves.
+
+Physical constants (CODATA 2018: `c`, `g`, `G`, `h`, `\hbar`, `k_B`, …) are
+fallbacks for names the sheet has not defined, and every row that uses one
+says so — `h` in `mgh` is Planck's constant until the sheet defines a height.
+Temperatures in °C and °F are readings: the difference of two is an interval
+in kelvin, and a name beginning with `\Delta` makes `10^{\circ}C` an interval
+too. Derivatives and integrals are not evaluated. `test/physics.test.mjs`
+covers the arithmetic and, mostly, the refusals.
+
 ## Desktop
 
 The same bundle runs as a desktop app through [Tauri](https://tauri.app), which

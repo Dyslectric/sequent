@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+    <meta name="color-scheme" content="light dark" />
+    <meta name="theme-color" content="#ffffff" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <link rel="apple-touch-icon" href="./icons/apple-touch-icon.png" />
+    <title>Sequent — Physics</title>
+  </head>
+  <body>
+    <header class="app-header">
+      <div class="app-header-inner">
+        <h1 class="app-title">Sequent</h1>
+        <div class="app-actions">
+          <div class="segmented" role="group" aria-label="Significant figures" title="Significant figures shown">
+            <button type="button" data-digits="3">3</button>
+            <button type="button" data-digits="4" class="is-active">4</button>
+            <button type="button" data-digits="6">6</button>
+            <button type="button" data-digits="10">10</button>
+          </div>
+          <div class="segmented page-switcher" role="group" aria-label="Sheet page">
+            <a href="./">Sheet</a>
+            <a href="./#demo">Demo</a>
+            <a href="./physics.html" class="is-active" aria-current="page">Physics</a>
+          </div>
+          <button type="button" id="export-sheet" class="icon-button" title="Save this sheet to a file">Export</button>
+          <button type="button" id="import-sheet" class="icon-button" title="Replace this sheet from a file">Import</button>
+          <input type="file" id="import-file" accept="application/json,.json" hidden />
+          <button
+            type="button"
+            id="constants-toggle"
+            class="icon-button"
+            title="Physical constants this sheet knows"
+            aria-controls="constants-panel"
+            aria-expanded="false"
+          >Constants</button>
+          <button type="button" id="clear-sheet" class="icon-button" title="Clear the sheet">Clear</button>
+          <button type="button" id="theme-toggle" class="icon-button" title="Switch theme" aria-label="Switch theme">
+            <span class="theme-icon"></span>
+          </button>
+        </div>
+      </div>
+    </header>
+
+    <div id="app-status" class="app-status" role="status" aria-live="polite" hidden></div>
+
+    <section id="constants-panel" class="theorem-panel" aria-labelledby="constants-panel-title" hidden>
+      <div class="theorem-panel-inner">
+        <div class="theorem-panel-heading">
+          <div>
+            <h2 id="constants-panel-title" class="theorem-panel-title">Constants this sheet knows</h2>
+            <p class="theorem-panel-note">
+              CODATA 2018. A name the sheet defines always wins &mdash; write
+              <i>h</i> = 2 m and <i>h</i> is a height again &mdash;
+              and every row that borrows a constant says which.
+              Click one to insert it.
+            </p>
+          </div>
+        </div>
+        <div id="constants-list" class="theorem-list"></div>
+      </div>
+    </section>
+
+    <main class="sheet-scroll">
+      <div id="sheet" class="sheet"></div>
+      <p class="hint">
+        Units come from the <b>units</b> tab, or type them upright with <code>\mathrm{km}</code> &middot;
+        <b>&rarr;</b> converts: <i>v</i> &rarr; km/h &middot;
+        <b>=</b> defines a new name, or checks one already defined &middot;
+        <i>&Delta;T</i> is one name
+      </p>
+    </main>
+
+    <section class="keyboard-panel" aria-label="Math keyboard">
+      <button
+        type="button"
+        id="keyboard-toggle"
+        class="keyboard-collapse-toggle"
+        aria-controls="keyboard-dock"
+        aria-expanded="true"
+      >
+        <span class="keyboard-collapse-icon" aria-hidden="true"></span>
+        <span data-keyboard-toggle-label>Hide keyboard</span>
+      </button>
+      <div id="keyboard-dock" class="keyboard-dock"></div>
+    </section>
+
+    <script type="module" src="/src/physics.js"></script>
+  </body>
+</html>

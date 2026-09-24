@@ -1,3 +1,4 @@
+import { fileURLToPath } from 'node:url';
 import { defineConfig } from 'vite';
 import { VitePWA } from 'vite-plugin-pwa';
 
@@ -17,7 +18,16 @@ import { VitePWA } from 'vite-plugin-pwa';
 export default defineConfig({
   // Relative base so a production build can be opened from any path.
   base: './',
-  build: { target: 'es2022' },
+  build: {
+    target: 'es2022',
+    // Two pages: the proving sheet, and its physics fork with units.
+    rollupOptions: {
+      input: {
+        main: fileURLToPath(new URL('./index.html', import.meta.url)),
+        physics: fileURLToPath(new URL('./physics.html', import.meta.url)),
+      },
+    },
+  },
 
   // Bind every interface so the sheet is reachable from another device on the
   // network — a phone, in practice. Vite listens on localhost only by default.

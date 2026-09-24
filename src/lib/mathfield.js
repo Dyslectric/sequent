@@ -789,7 +789,8 @@ export function setupVirtualKeyboard(container, options = {}) {
   if (!keyboard) return null;
 
   keyboard.container = container;
-  keyboard.layouts = KEYBOARD_LAYOUTS;
+  // The physics page brings its own tabs; every other page shares these.
+  keyboard.layouts = options.layouts ?? KEYBOARD_LAYOUTS;
   keyboard.show();
 
   // MathLive's root is exactly as tall as its container and clips overflow,

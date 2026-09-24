@@ -129,6 +129,109 @@ export const KEYBINDINGS = [
   { key: 'shift+]', ifMode: 'text', command: ['switchMode', 'math'] },
 ];
 
+/**
+ * Alt+M: type upright, as `\mathrm{…}` — which is how a unit is written, so
+ * `3` Alt+M `km/h` is three kilometres an hour rather than `k·m/h`. Pressing
+ * it again goes back to italic.
+ *
+ * This is a keydown handler rather than a keybinding because MathLive cannot
+ * say which state it is in. `applyStyle` with `operation: 'toggle'` only ever
+ * turns upright *on*, and `queryStyle` stops reporting upright as soon as a
+ * character has been typed. So the state is read off the atom before the
+ * caret, plus a pending flag for the moment between pressing Alt+M and typing
+ * anything — when the atom before the caret is still the italic one.
+ */
+const UPRIGHT = { variant: 'normal', variantStyle: 'up' };
+const ITALIC = { variant: 'math', variantStyle: '' };
+
+/** The style Alt+M has set but nothing has been typed in yet, per field. */
+const pendingUpright = new WeakMap();
+const uprightWired = new WeakSet();
+
+/**
+ * Upright letters are spelled, not resolved. MathLive's inline shortcuts run
+ * whatever the style, so `mu` became μ, `pi` π and `min` the `\min` operator
+ * halfway through a unit. Each field's full shortcut set is kept here and
+ * swapped out for none while the caret is typing upright.
+ */
+const fullShortcuts = new WeakMap();
+const shortcutsSuspended = new WeakMap();
+
+function syncShortcuts(mf) {
+  const upright = typingUpright(mf);
+  if (shortcutsSuspended.get(mf) === upright) return;
+  shortcutsSuspended.set(mf, upright);
+  mf.inlineShortcuts = upright ? {} : fullShortcuts.get(mf);
+}
+
+/**
+ * Whether the caret sits at the end of an upright run. The whole prefix is
+ * read rather than the last atom alone: a `/` inside `\mathrm{km/…}` is upright
+ * too, but serialised on its own it is just `/`.
+ */
+function typingUpright(mf) {
+  if (pendingUpright.has(mf)) return pendingUpright.get(mf);
+  const at = mf.position;
+  return at > 0 && /\\mathrm\{[^{}]*\}$/.test(mf.getValue(0, at, 'latex'));
+}
+
+/**
+ * `/` makes a fraction in MathLive. Inside a unit or a piece of text it is a
+ * slash — `km/h`, `and/or` — so it goes in as the character, keeping the
+ * style or mode it was typed in.
+ */
+function insertLiteralSlash(mf) {
+  if (mf.mode === 'text') {
+    mf.insert('/', { mode: 'text', format: 'latex', selectionMode: 'after' });
+    return true;
+  }
+  if (mf.mode === 'math' && typingUpright(mf)) {
+    mf.insert('/', { mode: 'math', format: 'latex', selectionMode: 'after', style: UPRIGHT });
+    return true;
+  }
+  return false;
+}
+
+export function toggleUpright(mf) {
+  const upright = !typingUpright(mf);
+  mf.applyStyle(upright ? UPRIGHT : ITALIC);
+  pendingUpright.set(mf, upright);
+  syncShortcuts(mf);
+  return upright;
+}
+
+function wireUprightKey(mf) {
+  if (uprightWired.has(mf)) return;
+  uprightWired.add(mf);
+  fullShortcuts.set(mf, mf.inlineShortcuts);
+  shortcutsSuspended.set(mf, false);
+  // Capture phase on the host runs before MathLive's own handler inside the
+  // shadow root. `code`, not `key`: on a Mac, Alt+M types µ.
+  mf.addEventListener('keydown', (event) => {
+    if (event.key === '/' && !event.altKey && !event.ctrlKey && !event.metaKey) {
+      if (insertLiteralSlash(mf)) {
+        event.preventDefault();
+        event.stopPropagation();
+      }
+      return;
+    }
+    if (event.code !== 'KeyM' || !event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
+    if (mf.mode !== 'math') return;
+    event.preventDefault();
+    event.stopPropagation();
+    toggleUpright(mf);
+  }, { capture: true });
+  // Once the caret moves or something is typed, the atom before the caret is
+  // the truth again — including when the caret is put back inside an upright
+  // run, where typing continues upright and so must stay unresolved.
+  const settle = () => {
+    pendingUpright.delete(mf);
+    syncShortcuts(mf);
+  };
+  mf.addEventListener('selection-change', settle);
+  mf.addEventListener('input', settle);
+}
+
 const key = (latex, extra = {}) => ({ latex, ...extra });
 
 /** Word-labelled keys: a text label stays narrow where rendered math would not. */
@@ -865,5 +968,6 @@ export function configureMathfield(mf) {
   mf.menuItems = [];
   mf.inlineShortcuts = { ...mf.inlineShortcuts, ...INLINE_SHORTCUTS };
   mf.keybindings = [...releaseBrowserKeys(mf.keybindings), ...KEYBINDINGS];
+  wireUprightKey(mf);
   return mf;
 }
